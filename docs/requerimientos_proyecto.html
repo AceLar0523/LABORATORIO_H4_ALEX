@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Requerimientos del proyecto - Sistema Inteligente de Control de Peaje</title>
+</head>
+<body style="margin: 0; background: #e2e8f0;">
+<div style="font-family: 'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; color: #1e293b; font-size: 15px; line-height: 1.65; max-width: 1000px; margin: 0 auto; background: #f8fafc; padding: 18px; border-radius: 14px;"><!-- ENCABEZADO -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 24px 26px; margin: 0 0 20px 0; border-left: 5px solid #0f172a;">
+<div style="font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: #64748b; margin: 0 0 6px 0;">IAM-811 Machine Learning y Aprendizaje Profundo</div>
+<h2 style="margin: 0 0 14px 0; font-size: 26px; line-height: 1.3; color: #0f172a; font-weight: bold;">Laboratorio Final de Hito: Sistema Inteligente de Control de Peaje</h2>
+<div style="margin: 0;"><strong><span style="display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; border-radius: 999px; padding: 4px 12px; font-size: 13px; margin: 0 6px 6px 0;">Entrega: 25/11/26</span></strong> <span style="display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; margin: 0 6px 6px 0;">100 puntos + hasta 20 adicionales</span></div>
+</div>
+<!-- 1. DESCRIPCIÓN -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #3b82f6;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">1. Descripción</h3>
+<p style="margin: 0 0 10px 0;">En este laboratorio integrarán lo trabajado durante el hito en un sistema real de punta a punta: un <strong>sistema de control de peaje</strong> que identifica vehículos a partir de video capturado con una aplicación móvil.</p>
+<p style="margin: 0;">El sistema reutiliza el <strong>modelo de detección de placas</strong> de proyectos anteriores y lo combina con un modelo de <strong>segmentación de instancias</strong> y uno de <strong>keypoints</strong>. La inferencia corre en la nube (RunPod o Google Colab), y una aplicación web publicada en un <strong>subdominio</strong> integra todas las rutas, APIs y un <strong>agente conversacional</strong> que responde consultas sobre placas por texto o imagen. La aplicación web recibe <strong>en tiempo real</strong> cada vehículo registrado por las casetas, y el acceso al sistema se hace con <strong>autenticación de Google</strong>.</p>
+</div>
+<!-- 2. OBJETIVOS -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #f59e0b;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">2. Objetivos</h3>
+<h4 style="margin: 0 0 6px 0; font-size: 16px; color: #0f172a;">Objetivo general</h4>
+<p style="margin: 0 0 14px 0;">Desarrollar e implementar un sistema de control de peaje basado en visión por computadora, que integre tres modelos de deep learning, una aplicación móvil, una aplicación web en tiempo real con autenticación de Google y un agente conversacional, usando infraestructura en la nube y sin depender de recursos locales.</p>
+<h4 style="margin: 0 0 6px 0; font-size: 16px; color: #0f172a;">Objetivos específicos</h4>
+<ol style="margin: 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">Reutilizar el modelo de detección de placas de proyectos anteriores e incorporar OCR para leer el texto de la placa.</li>
+<li style="margin: 0 0 4px 0;">Entrenar un modelo de <strong>segmentación de instancias</strong> que clasifique el tipo de vehículo (moto, auto, minibús, camión, bus) para determinar la tarifa.</li>
+<li style="margin: 0 0 4px 0;">Entrenar un modelo de <strong>keypoints</strong> sobre las ruedas del vehículo para estimar el número de ejes.</li>
+<li style="margin: 0 0 4px 0;">Gestionar los datasets en <strong>Roboflow</strong> y entrenar los modelos en <strong>Google Colab</strong>.</li>
+<li style="margin: 0 0 4px 0;">Servir los tres modelos en un único endpoint de inferencia en <strong>RunPod</strong> o <strong>Google Colab</strong>.</li>
+<li style="margin: 0 0 4px 0;">Desarrollar una <strong>aplicación web</strong> publicada en un subdominio que integre rutas, API REST, base de datos y el agente conversacional.</li>
+<li style="margin: 0 0 4px 0;">Implementar la <strong>actualización en tiempo real</strong> del panel web con cada vehículo registrado.</li>
+<li style="margin: 0 0 4px 0;">Implementar <strong>autenticación con Google</strong> (OAuth 2.0) en la aplicación web y la aplicación móvil.</li>
+<li style="margin: 0 0 4px 0;">Desarrollar una <strong>aplicación móvil</strong> que capture video y consuma la API del sistema.</li>
+<li style="margin: 0;">Implementar un <strong>agente conversacional</strong> que, a partir de una placa en texto o imagen, informe su estado en el sistema.</li>
+</ol>
+</div>
+<!-- 3. ARQUITECTURA -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #3b82f6;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">3. Arquitectura del sistema</h3>
+<pre style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-family: Consolas,'Courier New',monospace; font-size: 13px; line-height: 1.5; color: #0f172a; overflow-x: auto; margin: 0 0 12px 0; white-space: pre;">                      Google OAuth 2.0 (inicio de sesión)
+                         │                      │
+App móvil ──video/frames──► Aplicación web (subdominio)
+                              ├─ Panel web en tiempo real
+                              ├─ API REST + Base de datos
+                              └─ Agente conversacional
+                                     │
+                                     ▼  INFERENCE_URL
+                     RunPod o Google Colab (endpoint de inferencia)
+                     ├─ M1: Detección de placas + OCR
+                     ├─ M2: Segmentación de instancias (tipo de vehículo)
+                     └─ M3: Keypoints (ruedas → número de ejes)</pre>
+<p style="margin: 0;">La aplicación web no debe depender de dónde corre la inferencia. La URL del endpoint se guarda en configuración (<code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">INFERENCE_URL</code>), de modo que cambiar entre RunPod y Colab sea solo cambiar esa variable.</p>
+</div>
+<!-- 4. COMPONENTES -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #3b82f6;">
+<h3 style="margin: 0 0 16px 0; font-size: 19px; color: #0f172a;">4. Componentes mínimos obligatorios</h3>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.1 Aplicación móvil</h4>
+<ul style="margin: 0 0 18px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;"><strong>Inicio de sesión con Google</strong> (Google Sign-In).</li>
+<li style="margin: 0 0 4px 0;"><strong>Modo Caseta:</strong> captura video y envía frames (2 a 5 fps) o clips cortos (5 a 10 s) a la API. Muestra la placa leída, la categoría, los ejes, la tarifa y el estado.</li>
+<li style="margin: 0 0 4px 0;"><strong>Modo Consulta:</strong> permite enviar al agente una foto de una placa o escribir la placa en texto.</li>
+<li style="margin: 0;">Tecnología libre: Kotlin, Java, Flutter, React Native, Ionic, etc.</li>
+</ul>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.2 Aplicación web (en subdominio)</h4>
+<ul style="margin: 0 0 18px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">Publicada en un <strong>subdominio</strong> accesible por HTTPS.</li>
+<li style="margin: 0 0 4px 0;">Tecnología libre: <strong>Laravel, Django, Flask, FastAPI, React, Vue.js, Angular, Next.js, Node/Express</strong>, u otra.</li>
+<li style="margin: 0 0 4px 0;">Puede estar en <strong>VPS u hosting compartido</strong>.</li>
+<li style="margin: 0 0 4px 0;">Páginas mínimas:
+<div style="margin: 6px 0 2px 0;"><span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Panel en tiempo real:</strong> pasos, recaudación y alertas</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Vehículos:</strong> CRUD</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Pasos:</strong> historial con imagen de evidencia</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Alertas</strong></span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Chat:</strong> agente conversacional</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; margin: 0 6px 6px 0;"><strong>Estado:</strong> indica si el endpoint de inferencia responde</span></div>
+</li>
+<li style="margin: 0;">El backend genera una <strong>alerta</strong> cuando se detecta una placa no registrada o sin saldo.</li>
+</ul>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.3 Registro en tiempo real</h4>
+<p style="margin: 0 0 8px 0;">Cada vez que una caseta (app móvil) registra un vehículo, el panel web debe mostrarlo <strong>de inmediato, sin recargar la página</strong>: placa, imagen de evidencia, categoría, ejes, monto, estado y hora. Lo mismo aplica a las alertas y a los contadores de recaudación.</p>
+<p style="margin: 0 0 6px 0;">Tecnologías sugeridas, a elección del grupo:</p>
+<ul style="margin: 0 0 10px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;"><strong>WebSockets:</strong> Laravel Reverb o Pusher, Django Channels, Socket.IO, etc.</li>
+<li style="margin: 0 0 4px 0;"><strong>Server-Sent Events (SSE).</strong></li>
+<li style="margin: 0;"><strong>Servicios gestionados:</strong> Pusher, Ably, Firebase Realtime Database o Firestore.</li>
+</ul>
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 0 0 18px 0; font-size: 14px; color: #334155;">Si usan hosting compartido, verifiquen que soporte conexiones persistentes. Si no las soporta, usen un servicio gestionado (Pusher, Ably o Firebase).</div>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.4 Autenticación con Google</h4>
+<ul style="margin: 0 0 18px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">El acceso a la aplicación web y a la aplicación móvil se hace <strong>exclusivamente con Google</strong> (OAuth 2.0 / Google Sign-In). No se permiten usuarios con contraseña propia.</li>
+<li style="margin: 0 0 4px 0;">La aplicación debe manejar al menos dos roles:
+<ul style="margin: 4px 0 0 0; padding-left: 20px;">
+<li style="margin: 0 0 2px 0;"><strong>Administrador:</strong> gestiona vehículos, tarifas y casetas.</li>
+<li style="margin: 0;"><strong>Operador:</strong> registra pasos y consulta placas.</li>
+</ul>
+</li>
+<li style="margin: 0 0 4px 0;">Solo las cuentas de Google autorizadas (lista blanca en la base de datos) pueden ingresar. Las demás deben ver un mensaje de acceso denegado.</li>
+<li style="margin: 0 0 4px 0;">La API valida el token de Google (o un token propio emitido tras el inicio de sesión con Google) en cada petición de la app móvil.</li>
+<li style="margin: 0;">La cuenta de Google del docente debe estar autorizada con rol de administrador. El correo se indicará en la plataforma de entrega.</li>
+</ul>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.5 API REST mínima</h4>
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 10px 0;">
+<thead>
+<tr style="background: #f1f5f9; color: #0f172a;">
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0; width: 80px;">Método</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Ruta</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Descripción</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">POST</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/auth/google</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Recibe el token de Google desde la app y devuelve el token de sesión del sistema</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">POST</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/pasos/frame</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Recibe un frame desde la app, llama a la inferencia, registra el paso y lo emite en tiempo real</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">POST</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/placas/consultar</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Consulta una placa por texto y devuelve su estado</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">POST</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/placas/consultar-imagen</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Consulta una placa por imagen (M1 + OCR) y devuelve su estado</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">GET</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/placas/{placa}/historial</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Historial de pasos de una placa</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">GET</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/casetas/{id}/resumen</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Conteo y recaudación del día</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 7px; font-family: Consolas,monospace; font-size: 12px; font-weight: bold;">POST</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-family: Consolas,monospace; font-size: 13px;">/api/v1/agente/chat</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Mensaje al agente conversacional</td>
+</tr>
+</tbody>
+</table>
+<p style="margin: 0 0 18px 0;">La API debe estar documentada (Swagger/OpenAPI, Postman o equivalente) y todas las rutas, excepto <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">/auth/google</code>, deben exigir autenticación.</p>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.6 Base de datos mínima</h4>
+<pre style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-family: Consolas,'Courier New',monospace; font-size: 13px; line-height: 1.55; color: #334155; overflow-x: auto; margin: 0 0 8px 0; white-space: pre;">usuarios(id, email_google, nombre, rol, activo)
+vehiculos(id, placa, propietario, categoria, ejes, saldo, activo)
+casetas(id, nombre, ubicacion)
+tarifas(categoria, ejes, monto)
+pasos(id, placa_leida, placa_normalizada, confianza_ocr, categoria_detectada,
+      ejes_detectados, monto, caseta_id, usuario_id, imagen_url, estado, created_at)
+alertas(id, paso_id, tipo, atendida, created_at)</pre>
+<p style="margin: 0 0 18px 0;">Debe contener al menos <strong>20 vehículos de prueba</strong> registrados.</p>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.7 Modelos de inferencia</h4>
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 16px 0;">
+<thead>
+<tr style="background: #f1f5f9; color: #0f172a;">
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0; width: 70px;">Modelo</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Tarea</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Uso en el peaje</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">M1</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Detección de placas (proyecto anterior) + OCR (EasyOCR, PaddleOCR u otro)</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Identificar el vehículo</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">M2</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Segmentación de instancias (YOLO-seg)</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Categoría del vehículo → tarifa</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">M3</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Keypoints (YOLO-pose) sobre las ruedas</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Número de ejes → tarifa de vehículos pesados</td>
+</tr>
+</tbody>
+</table>
+<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 18px; margin: 0 0 14px 0;">
+<p style="margin: 0 0 8px 0;"><strong>M1: Detección de placas + OCR.</strong> El modelo localiza la placa, se recorta la región y el OCR extrae el texto, que luego se normaliza (mayúsculas, sin guiones ni espacios).</p>
+<img class="img-fluid" style="display: block; width: 100%; max-width: 900px; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; margin: 0 auto;" src="https://lh3.googleusercontent.com/d/1VLQO-A_IVZxVNJdggRlfdHLTpR6_O9AW" alt="M1: Detección de placas y OCR (imagen referencial)"></div>
+<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 18px; margin: 0 0 14px 0;">
+<p style="margin: 0 0 8px 0;"><strong>M2: Segmentación de instancias.</strong> Cada vehículo recibe su propia máscara y una categoría (moto, auto, minibús, camión, bus). La categoría define la tarifa base.</p>
+<img class="img-fluid" style="display: block; width: 100%; max-width: 900px; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; margin: 0 auto;" src="https://lh3.googleusercontent.com/d/1aUDgttV7toNDdJd1-9MtzEo-INMuwODw" alt="M2: Segmentación de instancias (imagen referencial)"></div>
+<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 18px; margin: 0 0 14px 0;">
+<p style="margin: 0 0 8px 0;"><strong>M3: Keypoints de ruedas.</strong> El modelo ubica un keypoint en el centro de cada rueda visible desde un lado del vehículo. El número de keypoints corresponde al número de ejes, que define la tarifa de los vehículos pesados.</p>
+<img class="img-fluid" style="display: block; width: 100%; max-width: 900px; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; margin: 0 auto;" src="https://lh3.googleusercontent.com/d/15h7G24YmwNhO-Z-WjOn5ZdvgCgWUmvwX" alt="M3: Keypoints de ruedas y conteo de ejes (imagen referencial)"></div>
+<ul style="margin: 0 0 8px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">M2 y M3 deben entrenarse con un <strong>dataset propio etiquetado en Roboflow</strong>. Se permite partir de datasets de Roboflow Universe, pero deben ampliarlos con imágenes propias.</li>
+<li style="margin: 0;">Los tres modelos deben servirse desde <strong>un único endpoint</strong> que devuelva JSON con: placa, confianza, categoría, ejes y latencia.</li>
+</ul>
+<p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b; font-style: italic;">Las imágenes son referenciales. Los resultados reales dependerán del dataset y del entrenamiento de cada grupo.</p>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">4.8 Agente conversacional</h4>
+<p style="margin: 0 0 8px 0;">Recibe una placa <strong>por texto o por imagen</strong> y responde con uno de estos cuatro estados:</p>
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 12px 0;">
+<thead>
+<tr style="background: #f1f5f9; color: #0f172a;">
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0; width: 230px;">Estado</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Condición</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;">Registrada y con paso</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">La placa está registrada y tiene pasos (indicar fecha, caseta, categoría y monto)</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;">Registrada sin paso</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">La placa está registrada pero nunca pasó por el peaje</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;">Identificada no registrada</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">La cámara la detectó pero no está registrada (posible evasión)</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;"><span style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;">No existe</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">No hay ningún registro de la placa</td>
+</tr>
+</tbody>
+</table>
+<p style="margin: 0 0 6px 0;"><strong>Requisitos del agente:</strong></p>
+<ul style="margin: 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">Disponible solo para usuarios autenticados con Google.</li>
+<li style="margin: 0 0 4px 0;">Responde <strong>solo con datos obtenidos de la base de datos o la API</strong>, sin inventar información.</li>
+<li style="margin: 0 0 4px 0;"><strong>Normaliza la placa</strong> antes de buscar: mayúsculas, sin guiones ni espacios, validación de formato.</li>
+<li style="margin: 0 0 4px 0;">Ante errores probables de OCR (<code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">O↔0,
+          I↔1, B↔8, S↔5</code>), sugiere coincidencias cercanas ("¿Quisiste decir…?").</li>
+<li style="margin: 0 0 4px 0;">Si la imagen no tiene una placa legible, lo indica y pide otra imagen.</li>
+<li style="margin: 0;">Puede implementarse con function calling desde el backend, con un framework de agentes (LangChain, LlamaIndex u otro) o con un LLM propio (por ejemplo, Ollama en RunPod).</li>
+</ul>
+</div>
+<!-- 5. RESTRICCIÓN -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #ef4444;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">5. Restricción: sin recursos locales</h3>
+<p style="margin: 0 0 12px 0;"><strong>Ningún componente del sistema puede ejecutarse en las computadoras de los estudiantes durante la demostración ni en la revisión.</strong></p>
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 12px 0;">
+<tbody>
+<tr>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600; width: 42%;">Datasets</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">Roboflow</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Entrenamiento</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">Google Colab</td>
+</tr>
+<tr>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Inferencia</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">RunPod o Google Colab</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Aplicación web, API, base de datos, tiempo real y agente</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">VPS, hosting compartido o servicios en la nube</td>
+</tr>
+<tr>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Autenticación</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">Google OAuth 2.0</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Código</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">Repositorio Git remoto</td>
+</tr>
+<tr>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0; font-weight: 600;">Evidencias</td>
+<td style="padding: 7px 12px; border: 1px solid #e2e8f0;">Carpeta en la nube</td>
+</tr>
+</tbody>
+</table>
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #334155;">La computadora personal solo se usa para programar. No se aceptan URLs <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">localhost</code>, IPs privadas ni túneles hacia equipos personales. Si se detecta algún recurso local, el componente correspondiente se califica con <strong>0 puntos</strong>.</div>
+</div>
+<!-- 6. ACTIVIDADES -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #3b82f6;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">6. Actividades sugeridas</h3>
+<ol style="margin: 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;"><strong>Organización:</strong> definir roles (dataset, entrenamiento, inferencia, web/agente, app móvil), crear el repositorio, el subdominio y el proyecto en Google Cloud Console para OAuth.</li>
+<li style="margin: 0 0 4px 0;"><strong>Datos:</strong> recolectar y etiquetar imágenes para M2 (máscaras) y M3 (keypoints de ruedas) en Roboflow.</li>
+<li style="margin: 0 0 4px 0;"><strong>Entrenamiento:</strong> entrenar M2 y M3 en Colab y validar M1 + OCR. Registrar métricas.</li>
+<li style="margin: 0 0 4px 0;"><strong>Inferencia:</strong> construir el endpoint con los tres modelos y desplegarlo en RunPod o Colab.</li>
+<li style="margin: 0 0 4px 0;"><strong>Backend web:</strong> base de datos, autenticación con Google, API, lógica de estados, tarifas y alertas.</li>
+<li style="margin: 0 0 4px 0;"><strong>Tiempo real:</strong> emitir cada paso y alerta al panel web.</li>
+<li style="margin: 0 0 4px 0;"><strong>Agente:</strong> implementar las tools de consulta por texto e imagen.</li>
+<li style="margin: 0 0 4px 0;"><strong>App móvil:</strong> inicio de sesión con Google y modos Caseta y Consulta.</li>
+<li style="margin: 0 0 4px 0;"><strong>Pruebas de punta a punta:</strong> medir la latencia y corregir.</li>
+<li style="margin: 0;"><strong>Documentación y video.</strong></li>
+</ol>
+</div>
+<!-- 7. ENTREGABLES -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #10b981;">
+<h3 style="margin: 0 0 8px 0; font-size: 19px; color: #0f172a;">7. Entregables</h3>
+<p style="margin: 0 0 16px 0;">Se entregan <strong>tres enlaces</strong>:</p>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">7.1 Enlace al repositorio Git</h4>
+<p style="margin: 0 0 8px 0;">Repositorio en GitHub, GitLab o Bitbucket, público o compartido con el docente. Estructura sugerida:</p>
+<pre style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-family: Consolas,'Courier New',monospace; font-size: 13px; line-height: 1.55; color: #334155; overflow-x: auto; margin: 0 0 10px 0; white-space: pre;">/entrenamiento     notebooks de Colab
+/inferencia        endpoint de los 3 modelos (+ Dockerfile si aplica)
+/web               aplicación web, tiempo real y agente
+/movil             aplicación móvil
+/docs              documentación de la API y diagramas
+README.md
+.env.example</pre>
+<p style="margin: 0 0 6px 0;">El <strong>README.md</strong> debe incluir:</p>
+<ul style="margin: 0 0 10px 0; padding-left: 22px;">
+<li style="margin: 0 0 3px 0;">Integrantes y rol de cada uno.</li>
+<li style="margin: 0 0 3px 0;">Descripción y diagrama de arquitectura.</li>
+<li style="margin: 0 0 3px 0;">Tecnologías usadas.</li>
+<li style="margin: 0 0 3px 0;">Instrucciones de despliegue de cada componente.</li>
+<li style="margin: 0;">Enlaces al subdominio, a los datasets de Roboflow y al endpoint de inferencia.</li>
+</ul>
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 0 0 18px 0; font-size: 14px; color: #334155;"><strong>Prohibido</strong> subir al repositorio contraseñas, tokens, API keys o el <em>client secret</em> de Google. Usar <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">.env</code> y entregar solo <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;">.env.example</code>.</div>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">7.2 Enlace a la carpeta en la nube</h4>
+<p style="margin: 0 0 6px 0;">Carpeta en Google Drive, OneDrive u otro servicio, con acceso para el docente. Debe contener:</p>
+<ul style="margin: 0 0 18px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;"><strong>Video demostración</strong> (8 a 12 minutos), ver sección 8.</li>
+<li style="margin: 0 0 4px 0;"><strong>Informe técnico (PDF):</strong> arquitectura, datasets (cantidad de imágenes, clases, aumentaciones), entrenamiento y métricas (mAP de M2 y M3, precisión del OCR, error en el conteo de ejes), latencia de punta a punta, mecanismo de tiempo real usado, problemas encontrados y soluciones.</li>
+<li style="margin: 0 0 4px 0;"><strong>APK</strong> de la aplicación móvil.</li>
+<li style="margin: 0 0 4px 0;"><strong>Capturas de pantalla</strong> de cada componente.</li>
+<li style="margin: 0 0 4px 0;"><strong>Documentación de la API</strong> (exportación de Swagger o colección de Postman).</li>
+<li style="margin: 0;">Si aplica puntos adicionales: evidencias según la sección 10.</li>
+</ul>
+<h4 style="margin: 0 0 8px 0; font-size: 16px; color: #0f172a;">7.3 Enlace al subdominio</h4>
+<p style="margin: 0;">URL de la aplicación web en producción (por ejemplo, <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 6px; font-family: Consolas,monospace; font-size: 13px;"><a href="https://grupoX.dominio.com" class="_blanktarget">https://grupoX.dominio.com</a></code>), funcionando en la fecha de revisión, con la cuenta de Google del docente ya autorizada como administrador.</p>
+</div>
+<!-- 8. VIDEO -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #10b981;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">8. Requisitos del video demostración</h3>
+<p style="margin: 0 0 6px 0;">El video debe mostrar, como mínimo:</p>
+<ol style="margin: 0 0 12px 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">Presentación del equipo y de la arquitectura (máx. 1 minuto).</li>
+<li style="margin: 0 0 4px 0;">Inicio de sesión con Google en la web y en la app, incluido el rechazo de una cuenta no autorizada.</li>
+<li style="margin: 0 0 4px 0;">La app móvil en <strong>modo Caseta</strong> capturando video real y recibiendo el resultado (placa, categoría, ejes, tarifa).</li>
+<li style="margin: 0 0 4px 0;"><strong>En pantalla dividida o simultánea:</strong> el panel web mostrando el vehículo registrado en tiempo real, sin recargar la página.</li>
+<li style="margin: 0 0 4px 0;">El agente conversacional respondiendo los <strong>cuatro estados</strong>, con al menos una consulta por <strong>texto</strong> y una por <strong>imagen</strong>.</li>
+<li style="margin: 0 0 4px 0;">Una alerta apareciendo en tiempo real al detectar una placa no registrada.</li>
+<li style="margin: 0 0 4px 0;">El endpoint de inferencia en la nube (consola de RunPod o Colab en ejecución).</li>
+<li style="margin: 0;">Conclusiones y métricas principales.</li>
+</ol>
+<p style="margin: 0;"><strong>Todos los integrantes deben participar en el video.</strong></p>
+</div>
+<!-- 9. RÚBRICA -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #6366f1;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">9. Rúbrica de evaluación (100 puntos)</h3>
+<div style="overflow-x: auto;">
+<table style="width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 720px;">
+<thead>
+<tr style="background: #f1f5f9; color: #0f172a;">
+<th style="text-align: left; padding: 9px 10px; border: 1px solid #e2e8f0;">Criterio</th>
+<th style="text-align: center; padding: 9px 10px; border: 1px solid #e2e8f0;">Puntos</th>
+<th style="text-align: left; padding: 9px 10px; border: 1px solid #e2e8f0;">Excelente (100%)</th>
+<th style="text-align: left; padding: 9px 10px; border: 1px solid #e2e8f0;">Satisfactorio (60%)</th>
+<th style="text-align: left; padding: 9px 10px; border: 1px solid #e2e8f0;">Insuficiente (0–30%)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">Modelos de IA</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">25</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">M2 y M3 entrenados con dataset propio, métricas reportadas y adecuadas; M1 + OCR leen placas correctamente; los 3 modelos en un único endpoint</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Modelos funcionales con métricas bajas o dataset propio reducido</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Algún modelo no funciona, falta el dataset propio o no hay métricas</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">Aplicación web, API y BD</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">15</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Subdominio HTTPS, todas las rutas funcionando, API documentada y protegida, lógica de estados, tarifas y alertas correcta</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Funciona con rutas faltantes o sin documentación</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">No está publicada o la mayoría de las rutas fallan</td>
+</tr>
+<tr>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">Tiempo real y autenticación con Google</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">10</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">El panel se actualiza al instante con cada paso y alerta; inicio de sesión con Google en web y app, roles y lista blanca funcionando</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Tiempo real con retrasos o recarga parcial; Google Auth sin roles o sin lista blanca</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Sin tiempo real o con autenticación distinta a Google</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">Agente conversacional</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">20</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Responde los 4 estados por texto e imagen, normaliza la placa, sugiere coincidencias y no inventa datos</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Responde por texto e imagen con algún estado incorrecto o sin normalización</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Solo funciona por texto, inventa datos o no responde los estados</td>
+</tr>
+<tr>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">App móvil e integración</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">20</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Modos Caseta y Consulta funcionando con video real; flujo completo app → web → inferencia → respuesta → panel en tiempo real</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Flujo completo con fallas parciales</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">La app no se conecta al sistema o el flujo no está completo</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: bold;">Entregables y documentación</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold;">10</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Repositorio ordenado con README completo, informe técnico, video que cumple la sección 8 y carpeta completa</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Entregables incompletos o video que omite puntos</td>
+<td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Faltan entregables o los enlaces no son accesibles</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- 10. PUNTOS ADICIONALES -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #f59e0b;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">10. Puntos adicionales (hasta 20 puntos) , opcional en entregas individuales, obligatorio en grupos.</h3>
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 12px 0;">
+<thead>
+<tr style="background: #f1f5f9; color: #0f172a;">
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0; width: 26%;">Bonificación</th>
+<th style="text-align: center; padding: 9px 12px; border: 1px solid #e2e8f0; width: 70px;">Puntos</th>
+<th style="text-align: left; padding: 9px 12px; border: 1px solid #e2e8f0;">Evidencia requerida</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">Gestión de entornos con conda, mamba o venv</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: center;"><span style="background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-weight: bold;">+5</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">Archivos <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: Consolas,monospace; font-size: 12.5px;">environment.yml</code> o <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: Consolas,monospace; font-size: 12.5px;">requirements.txt</code> con versiones fijadas para cada servicio; instrucciones en el README para recrear cada entorno; salida de un script de diagnóstico (versión de Python, torch, CUDA, ultralytics) ejecutado en cada entorno de la nube, incluida en la carpeta</td>
+</tr>
+<tr style="background: #f8fafc;">
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">Inferencia en RunPod en vivo</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: center;"><span style="background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-weight: bold;">+5</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">El endpoint de inferencia corre en RunPod (Pod o Serverless) durante la demostración y está disponible en la fecha de revisión; el video muestra la consola de RunPod y una petición en vivo. Usar solo Colab es válido para el puntaje base, pero no otorga esta bonificación</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: bold;">Identificación de pasajeros mediante segmentación</td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: center;"><span style="background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-weight: bold;">+5</span></td>
+<td style="padding: 8px 12px; border: 1px solid #e2e8f0;">
+<p>Un modelo de segmentación de cualquier tipo (instancias, semántica o panóptica) identifica y cuenta a los pasajeros visibles dentro del vehículo. El número de pasajeros se guarda en cada paso (campo <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: Consolas,monospace; font-size: 12.5px;">pasajeros</code> en la tabla <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: Consolas,monospace; font-size: 12.5px;">pasos</code>), se devuelve en el JSON del endpoint y se muestra en el panel en tiempo real. El informe incluye las métricas del modelo, y el video muestra al menos un caso con varios pasajeros</p>
+</td>
+</tr>
+<tr>
+<td style="padding: 8px 12px; border: 1px solid rgb(226, 232, 240); font-weight: bold;">Conexión de alerta a un dispositivo de hardaware</td>
+<td style="padding: 8px 12px; border: 1px solid rgb(226, 232, 240); text-align: center;"><span style="background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-weight: bold;">+5</span></td>
+<td style="padding: 8px 12px; border: 1px solid rgb(226, 232, 240);">
+<p>Debe existir un dispositivo de alerta que señale los procesos de identificación, inferencia, acción o alerta de eventos.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 0 0 10px 0; font-size: 14px; color: #334155;"><strong>Sobre la identificación de pasajeros:</strong> se refiere a detectar y contar personas dentro del vehículo, no a reconocer quiénes son. No se permite reconocimiento facial ni guardar recortes de rostros. Las imágenes de evidencia deben mostrar solo la máscara o el conteo.</div>
+<p style="margin: 0; font-weight: 600;">La nota final no puede superar los 100 puntos.</p>
+</div>
+<!-- 11. CONDICIONES -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0 0 20px 0; border-left: 5px solid #ef4444;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">11. Condiciones y penalizaciones</h3>
+<ul style="margin: 0; padding-left: 22px;">
+<li style="margin: 0 0 4px 0;">Enlaces no accesibles en la fecha de revisión: el criterio asociado se califica con 0.</li>
+<li style="margin: 0 0 4px 0;">Recursos ejecutándose en local (localhost, IP privada, túnel a equipo personal): el componente se califica con 0.</li>
+<li style="margin: 0 0 4px 0;">Credenciales, tokens o <em>client secret</em> expuestos en el repositorio: <strong>−10 puntos</strong>.</li>
+<li style="margin: 0 0 4px 0;">Entrega fuera de plazo: según el reglamento de la asignatura.</li>
+<li style="margin: 0;">Copia total o parcial entre grupos: se aplica el reglamento académico de la universidad.</li>
+</ul>
+</div>
+<!-- 12. RECURSOS -->
+<div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.05); padding: 22px 26px; margin: 0; border-left: 5px solid #64748b;">
+<h3 style="margin: 0 0 12px 0; font-size: 19px; color: #0f172a;">12. Recursos de apoyo</h3>
+<div><span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">Ultralytics YOLO (detección, segmentación y pose)</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">Roboflow: etiquetado de máscaras y keypoints, Roboflow Universe</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">RunPod (Pods, Serverless, proxy de puertos)</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">Google Identity: OAuth 2.0 y Google Sign-In (web y Android)</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">Tiempo real: Laravel Reverb, Django Channels, Socket.IO, Pusher, Ably, Firebase</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">EasyOCR y PaddleOCR</span> <span style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 6px 8px 0;">Miniforge (conda/mamba) y el módulo venv de Python</span></div>
+</div></div>
+</body>
+</html>
