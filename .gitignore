@@ -1,0 +1,10 @@
+.env
+backend/.env
+backend/vendor/
+frontend/node_modules/
+frontend/dist/
+movil/build/
+movil/.dart_tool/
+inferencia/.venv/
+__pycache__/
+*.pyc
