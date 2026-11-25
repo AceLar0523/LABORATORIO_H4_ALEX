@@ -868,10 +868,15 @@ class PeajePipeline:
         nota_final = str(v0.get("nota", ""))
         pasajeros_final = int(v0.get("num_pasajeros", 0))
 
-        ruedas_src = v0["llantas"]
+        ruedas_src = [
+            llantas[r] if isinstance(r, int) and 0 <= r < len(llantas) else r
+            for r in v0.get("llantas", [])
+        ]
         puntos_ruedas: List[List[float]] = []
         cajas_ruedas: List[List[float]] = []
         for r in ruedas_src:
+            if not isinstance(r, dict):
+                continue
             if r.get("box") is not None:
                 cajas_ruedas.append([round(float(c), 1) for c in r["box"]])
             kps = r.get("kps")
@@ -883,11 +888,14 @@ class PeajePipeline:
                     if c >= 0.20 and (x > 0 or y > 0):
                         puntos_ruedas.append([round(x, 1), round(y, 1), round(c, 2)])
 
-        pas_src = v0.get("pasajeros", [])
+        pas_src = [
+            pasajeros[p] if isinstance(p, int) and 0 <= p < len(pasajeros) else p
+            for p in v0.get("pasajeros", [])
+        ]
         cajas_pasajeros = [
             [round(float(c), 1) for c in p["box"]]
             for p in pas_src
-            if p.get("box") is not None
+            if isinstance(p, dict) and p.get("box") is not None
         ]
 
         resp: Dict[str, Any] = {
