@@ -18,8 +18,18 @@ use App\Http\Controllers\Api\StreamController;
 
 Route::prefix('v1')->group(function () {
 
-    // Ruta de Login Google pública
+    // Ping público de diagnóstico para app móvil y monitoreo
+    Route::get('/ping', function () {
+        return response()->json([
+            'success' => true,
+            'message' => 'Servidor de Peaje Inteligente en Línea',
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    });
+
+    // Rutas de Login públicas
     Route::post('/auth/google', [AuthController::class, 'googleLogin']);
+    Route::post('/auth/login', [AuthController::class, 'credentialsLogin']);
 
     // Stream SSE en tiempo real para Panel Web (permite token por query o cabecera)
     Route::get('/stream/eventos', [StreamController::class, 'stream']);

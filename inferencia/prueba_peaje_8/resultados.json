@@ -1,0 +1,100 @@
+[
+  {
+    "imagen": "Captura desde 2026-11-23 10-01-01.png",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_8/res_Captura desde 2026-11-23 10-01-01.jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "minibus",
+        "confianza": 0.473,
+        "box": [
+          27.3,
+          83.8,
+          529.9,
+          510.6
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "3/4",
+        "placa": "4257XCR",
+        "confianza_ocr": 1.0
+      },
+      {
+        "id": 2,
+        "categoria": "auto",
+        "confianza": 0.843,
+        "box": [
+          0.0,
+          180.7,
+          62.0,
+          307.4
+        ],
+        "ejes": 2,
+        "pasajeros": 1,
+        "vista": "lateral",
+        "placa": "SIN_PLACA",
+        "confianza_ocr": 0.0
+      }
+    ]
+  },
+  {
+    "imagen": "Imagen pegada (3).png",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_8/res_Imagen pegada (3).jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "auto",
+        "confianza": 0.813,
+        "box": [
+          109.5,
+          70.4,
+          450.3,
+          333.2
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "3/4",
+        "placa": "2245KEF",
+        "confianza_ocr": 0.999
+      },
+      {
+        "id": 2,
+        "categoria": "auto",
+        "confianza": 0.775,
+        "box": [
+          34.4,
+          71.9,
+          139.5,
+          181.1
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "3/4",
+        "placa": "",
+        "confianza_ocr": 0.979
+      }
+    ]
+  },
+  {
+    "imagen": "images (1).jpeg",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_8/res_images (1).jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "minibus",
+        "confianza": 0.684,
+        "box": [
+          12.1,
+          83.6,
+          434.4,
+          521.9
+        ],
+        "ejes": 2,
+        "pasajeros": 1,
+        "vista": "lateral",
+        "placa": "47171TD",
+        "confianza_ocr": 0.99
+      }
+    ]
+  }
+]

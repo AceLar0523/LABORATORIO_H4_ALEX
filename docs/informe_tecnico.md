@@ -4,7 +4,7 @@
 **Laboratorio Final de Hito:** Sistema Inteligente de Control de Peaje  
 **Fecha de Entrega:** 25/11/2026  
 **Puntaje Máximo:** 100 puntos + hasta 20 puntos adicionales  
-**Infraestructura en la Nube:** RunPod GPU Cloud (Pods / Serverless) + Ollama LLM + VPS Subdominio HTTPS  
+**Infraestructura en la Nube:** RunPod GPU Cloud (Pods / Serverless) + Ollama LLM + Supabase PostgreSQL (Managed DB) + VPS Subdominio HTTPS  
 
 ---
 

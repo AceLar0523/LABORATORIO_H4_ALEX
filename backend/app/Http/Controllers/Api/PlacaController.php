@@ -147,7 +147,7 @@ class PlacaController extends Controller
             'imagen_base64' => 'nullable|string',
         ]);
 
-        $inferenceUrl = env('INFERENCE_URL', 'http://127.0.0.1:8000');
+        $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://127.0.0.1:8000'), '/');
         $imageData = null;
         $imageExtension = 'jpg';
 
@@ -173,7 +173,7 @@ class PlacaController extends Controller
         $confianzaOcr = 0.0;
 
         try {
-            $response = Http::timeout(8)
+            $response = Http::timeout(12)
                 ->attach('file', $imageData, $filename)
                 ->post($inferenceUrl . '/predict/ocr');
 

@@ -1,0 +1,10 @@
+Imagen: Captura desde 2026-11-23 10-01-01.png
+  Vehículo #1: clase=minibus conf=0.47 | placa=4257XCR (BO-OK, ocr=1.0) | llantas=2 vista=3/4 ejes=2 | pasajeros=0
+  Vehículo #2: clase=auto conf=0.84 | placa=Sin placa | llantas=0 vista=lateral ejes=2 | pasajeros=1 Mínimo asumido (sin llantas claras)
+
+Imagen: Imagen pegada (3).png
+  Vehículo #1: clase=auto conf=0.81 | placa=2245KEF (BO-OK, ocr=0.999) | llantas=2 vista=3/4 ejes=2 | pasajeros=0
+  Vehículo #2: clase=auto conf=0.78 | placa=Placa no legible (det=0.524) | llantas=2 vista=3/4 ejes=2 | pasajeros=0 Mínimo asumido (solo se detectó 1 eje visible)
+
+Imagen: images (1).jpeg
+  Vehículo #1: clase=minibus conf=0.68 | placa=47171TD (INT-GLOBAL, ocr=0.99) | llantas=0 vista=lateral ejes=2 | pasajeros=1 Mínimo asumido (sin llantas claras)

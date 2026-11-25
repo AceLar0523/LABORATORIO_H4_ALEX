@@ -12,21 +12,37 @@ class StreamController extends Controller
 {
     /**
      * GET /api/v1/stream/eventos
-     * Servidor de Server-Sent Events (SSE) para el panel web en tiempo real.
-     * Transmite inmediatamente pasos nuevos, alertas y actualización de contadores
-     * sin sobrecargar la red ni requerir librerías externas o servidores WebSocket de pago.
+     * SSE no bloqueante para entorno de desarrollo y producción.
+     * Cierra la sesión activa de PHP si existiera para liberar el worker inmediatamente.
      */
     public function stream(Request $request)
     {
-        $response = new StreamedResponse(function () use ($request) {
-            $lastPasoId = $request->query('last_paso_id', Paso::max('id') ?? 0);
-            $lastAlertaId = $request->query('last_alerta_id', Alerta::max('id') ?? 0);
+        // Liberar sesión de PHP para que no bloquee otras peticiones HTTP concurrentes
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
 
-            // Mantener la conexión abierta por 30 segundos
+        if (function_exists('apache_setenv')) {
+            @apache_setenv('no-gzip', '1');
+        }
+        @ini_set('zlib.output_compression', '0');
+        @ini_set('implicit_flush', '1');
+
+        $response = new StreamedResponse(function () use ($request) {
+            $lastPasoId = (int)$request->query('last_paso_id', 0);
+            $lastAlertaId = (int)$request->query('last_alerta_id', 0);
+
+            if ($lastPasoId === 0) {
+                $lastPasoId = (int)(Paso::max('id') ?? 0);
+            }
+            if ($lastAlertaId === 0) {
+                $lastAlertaId = (int)(Alerta::max('id') ?? 0);
+            }
+
             $startTime = time();
 
-            while (time() - $startTime < 28) {
-                // Verificar si hay nuevos pasos
+            // Duración máxima de 15 segundos por conexión SSE para liberar sockets periódicamente
+            while (time() - $startTime < 15) {
                 $nuevosPasos = Paso::with(['caseta', 'alertas'])
                     ->where('id', '>', $lastPasoId)
                     ->orderBy('id', 'asc')
@@ -38,11 +54,12 @@ class StreamController extends Controller
                         echo 'data: ' . json_encode($paso) . "\n\n";
                         $lastPasoId = max($lastPasoId, $paso->id);
                     }
-                    ob_flush();
+                    while (ob_get_level() > 0) {
+                        ob_end_flush();
+                    }
                     flush();
                 }
 
-                // Verificar nuevas alertas
                 $nuevasAlertas = Alerta::with('paso')
                     ->where('id', '>', $lastAlertaId)
                     ->orderBy('id', 'asc')
@@ -54,25 +71,28 @@ class StreamController extends Controller
                         echo 'data: ' . json_encode($alerta) . "\n\n";
                         $lastAlertaId = max($lastAlertaId, $alerta->id);
                     }
-                    ob_flush();
+                    while (ob_get_level() > 0) {
+                        ob_end_flush();
+                    }
                     flush();
                 }
 
-                // Heartbeat para mantener vivo el stream
-                echo ": heartbeat\n\n";
-                ob_flush();
+                echo ": ping\n\n";
+                while (ob_get_level() > 0) {
+                    ob_end_flush();
+                }
                 flush();
 
-                usleep(700000); // 0.7s
+                // 1 segundo de intervalo para no saturar el pooler de Supabase
+                sleep(1);
             }
         });
 
         $response->headers->set('Content-Type', 'text/event-stream');
-        $response->headers->set('Cache-Control', 'no-cache');
+        $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
         $response->headers->set('Connection', 'keep-alive');
-        $response->headers->set('X-Accel-Buffering', 'no'); // Para Nginx / hosting
+        $response->headers->set('X-Accel-Buffering', 'no');
 
         return $response;
     }
 }
-

@@ -1,12 +1,17 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-python-multipart>=0.0.6
+# Dependencias del Motor Unificado (M1+M2+M3+M4) para RunPod y Local
+# Nota: En RunPod PyTorch (CUDA), `torch` y `torchvision` ya vienen preinstalados
+# con soporte GPU. No se fijan aquí para no sobreescribir la versión CUDA del Pod.
+# (Si se instala en un Python limpio sin PyTorch, `ultralytics` lo instala automáticamente.)
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
 numpy>=1.24.0
 opencv-python-headless>=4.8.0
 pyyaml>=6.0
-ultralytics>=8.0.0
-onnxruntime>=1.15.0
+ultralytics>=8.3.0
+onnxruntime>=1.18.0
+fast-plate-ocr>=1.0.0
 pydantic>=2.0.0
-torch>=2.0.0
-torchvision>=0.15.0
-
+httpx>=0.27.0
+requests>=2.31.0

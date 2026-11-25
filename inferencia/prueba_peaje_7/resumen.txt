@@ -1,0 +1,10 @@
+Imagen: res_8b6e8f46ab0f4c09b171e96162259b99_jpg.rf.5597054fc1c1fbdb59a69e049b60b541.jpg
+  Vehículo #1: clase=bus conf=0.97 | placa=Sin placa | llantas=1 vista=3/4 ejes=2 | pasajeros=0 Mínimo asumido (solo se detectó 1 eje visible)
+
+Imagen: res_72bc54e4-fdeb-44ae-9a92-1251ade5298e_jpg.rf.93e94dff2c638052051715675c9e5e6c.jpg
+  Vehículo #1: clase=auto conf=0.92 | placa=VBP3477 (INT-MERCOSUR, ocr=1.0) | llantas=0 vista=lateral ejes=2 | pasajeros=0 Mínimo asumido (sin llantas claras)
+  Vehículo #2: clase=auto conf=0.89 | placa=Sin placa | llantas=1 vista=3/4 ejes=2 | pasajeros=0 Mínimo asumido (solo se detectó 1 eje visible)
+
+Imagen: res_30f2f3f2307941c881af7190a746c575_jpg.rf.2d3f811dfcb06162cb254ab133f20616.jpg
+  Vehículo #1: clase=bus conf=0.91 | placa=Placa no legible (det=0.59) | llantas=0 vista=lateral ejes=2 | pasajeros=0 Mínimo asumido (sin llantas claras)
+  Vehículo #2: clase=bus conf=0.66 | placa=Sin placa | llantas=1 vista=lateral ejes=2 | pasajeros=1 Mínimo asumido (solo se detectó 1 eje visible)

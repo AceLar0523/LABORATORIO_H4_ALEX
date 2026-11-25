@@ -1,125 +1,156 @@
 <template>
   <div class="space-y-6">
-    <!-- Métricas principales en vivo -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
-      <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pasos Hoy</p>
-            <h3 class="text-3xl font-extrabold text-white mt-1">{{ stats.total_pasos }}</h3>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-          </div>
-        </div>
-        <div class="mt-3 flex items-center gap-1.5 text-xs text-emerald-400">
-          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-          <span>En tiempo real vía SSE</span>
-        </div>
+    <!-- Encabezado con estado en vivo y botones de simulación -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Monitoreo de Caseta en Vivo</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Transmisión instantánea de pasos y cobros (SQLite Integrado)</p>
       </div>
-
-      <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-lg">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Recaudación Hoy</p>
-            <h3 class="text-3xl font-extrabold text-white mt-1">Bs. {{ stats.recaudacion_hoy.toFixed(2) }}</h3>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          </div>
-        </div>
-        <p class="mt-3 text-xs text-slate-400">Tarifas cobradas en casetas</p>
-      </div>
-
-      <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-lg">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Alertas Activas</p>
-            <h3 class="text-3xl font-extrabold text-white mt-1" :class="stats.alertas_pendientes > 0 ? 'text-red-400' : 'text-slate-300'">
-              {{ stats.alertas_pendientes }}
-            </h3>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-        </div>
-        <p class="mt-3 text-xs text-slate-400">Placas no registradas / sin saldo</p>
-      </div>
-
-      <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-lg">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Motor Inferencia</p>
-            <h3 class="text-xl font-bold mt-2" :class="aiStatus === 'online' ? 'text-emerald-400' : 'text-amber-400'">
-              {{ aiStatus === 'online' ? '● En Línea' : '○ Standby / Test' }}
-            </h3>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-          </div>
-        </div>
-        <p class="mt-3 text-xs text-slate-400">M1 (Placas/OCR) + M2 + M3</p>
+      <div class="flex items-center gap-2">
+        <button
+          @click="cargarResumen"
+          :disabled="cargando"
+          class="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 hover:text-slate-900 transition shadow-2xs cursor-pointer"
+          title="Actualizar datos"
+        >
+          <svg class="w-4 h-4" :class="{ 'animate-spin': cargando }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Conectado en Vivo
+        </span>
+        <button
+          @click="simularPaso"
+          :disabled="simulando"
+          class="text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+        >
+          <svg v-if="simulando" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span>{{ simulando ? 'Registrando...' : '+ Registrar Paso Inmediato' }}</span>
+        </button>
       </div>
     </div>
 
-    <!-- Contenido: Últimos Pasos en Vivo y Alertas -->
+    <!-- Indicadores Métricos Claves -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-xs interactive-card relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vehículos Registrados</span>
+          <span class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+          </span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span class="text-3xl font-extrabold text-slate-900 tracking-tight">{{ stats.total_pasos }}</span>
+          <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Total Tránsitos</span>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-xs interactive-card relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Recaudación Total</span>
+          <span class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span class="text-3xl font-extrabold text-slate-900 tracking-tight">Bs. {{ stats.recaudacion_hoy.toFixed(2) }}</span>
+          <span class="text-xs font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Cobrado</span>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-xs interactive-card relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Alertas Activas</span>
+          <span class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span class="text-3xl font-extrabold text-amber-700 tracking-tight">{{ stats.alertas_pendientes }}</span>
+          <span class="text-xs font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Pendientes</span>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-xs interactive-card relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Infraestructura Nube</span>
+          <span class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" /></svg>
+          </span>
+        </div>
+        <div class="mt-3">
+          <span class="text-sm font-bold text-slate-800 block">SQLite + RunPod</span>
+          <span class="text-[11px] font-medium text-indigo-600">Almacenamiento Local Rápido</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feed Principal: Tabla de Tránsitos + Alertas de Caseta -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Tabla de Pasos en Vivo (2 columnas) -->
-      <div class="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-4">
+      <div class="lg:col-span-2 bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden flex flex-col">
+        <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div class="flex items-center gap-2">
-            <h2 class="text-lg font-bold text-white">Tránsito de Vehículos en Vivo</h2>
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              Live Feed
-            </span>
+            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Flujo de Vehículos en Tiempo Real</h2>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
           </div>
-          <button @click="simularPaso" class="text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium py-1.5 px-3 rounded-lg transition">
-            + Simular Paso Caseta
-          </button>
+          <span class="text-[11px] font-medium text-slate-500">{{ ultimosPasos.length }} registros cargados</span>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm text-slate-300">
-            <thead class="text-xs uppercase bg-slate-900/60 text-slate-400 border-b border-slate-700">
+        <div class="overflow-x-auto flex-1">
+          <table class="w-full text-left text-xs text-slate-600">
+            <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
               <tr>
-                <th class="py-3 px-4">Evidencia</th>
-                <th class="py-3 px-4">Placa / Conf.</th>
-                <th class="py-3 px-4">Categoría / Ejes</th>
-                <th class="py-3 px-4">Tarifa</th>
-                <th class="py-3 px-4">Estado</th>
-                <th class="py-3 px-4">Hora</th>
+                <th class="py-3 px-4 font-semibold">Evidencia</th>
+                <th class="py-3 px-4 font-semibold">Placa / Conf.</th>
+                <th class="py-3 px-4 font-semibold">Categoría & Ejes</th>
+                <th class="py-3 px-4 font-semibold">Tarifa</th>
+                <th class="py-3 px-4 font-semibold">Estado</th>
+                <th class="py-3 px-4 font-semibold">Hora</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-700/50">
-              <tr v-for="p in ultimosPasos" :key="p.id" class="hover:bg-slate-700/30 transition">
-                <td class="py-3 px-4">
-                  <div class="w-12 h-10 rounded-lg bg-slate-900 overflow-hidden border border-slate-700 flex items-center justify-center">
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="p in ultimosPasos" :key="p.id" class="hover:bg-blue-50/40 transition-colors animate-new-row">
+                <td class="py-2.5 px-4">
+                  <div class="w-12 h-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shadow-2xs">
                     <img v-if="p.imagen_url" :src="p.imagen_url" class="w-full h-full object-cover" />
-                    <span v-else class="text-[10px] text-slate-500">Sin foto</span>
+                    <span v-else class="text-[9px] text-slate-400 font-medium">Foto</span>
                   </div>
                 </td>
-                <td class="py-3 px-4 font-mono font-bold text-white">
-                  <div>{{ p.placa_normalizada || p.placa_leida }}</div>
-                  <div class="text-[11px] text-slate-400 font-sans">Conf: {{ (p.confianza_ocr * 100).toFixed(0) }}%</div>
+                <td class="py-2.5 px-4">
+                  <div class="font-mono font-bold text-blue-950 text-xs">{{ p.placa_normalizada || p.placa_leida }}</div>
+                  <div class="text-[10px] text-slate-400 font-sans">Confianza: {{ (p.confianza_ocr * 100).toFixed(0) }}%</div>
                 </td>
-                <td class="py-3 px-4 capitalize">
-                  {{ p.categoria_detectada }} ({{ p.ejes_detectados }} ejes)
+                <td class="py-2.5 px-4 text-slate-700 font-medium">
+                  <div class="capitalize">{{ p.categoria_detectada }} • {{ p.ejes_detectados }} ejes</div>
+                  <div class="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                    <span>{{ p.pasajeros || 1 }} {{ (p.pasajeros || 1) === 1 ? 'pasajero' : 'pasajeros' }}</span>
+                  </div>
                 </td>
-                <td class="py-3 px-4 font-semibold text-emerald-400">
+                <td class="py-2.5 px-4 font-bold text-slate-900">
                   Bs. {{ parseFloat(p.monto).toFixed(2) }}
                 </td>
-                <td class="py-3 px-4">
-                  <span class="inline-block px-2.5 py-1 rounded-full text-xs font-semibold" :class="getEstadoBadge(p.estado)">
+                <td class="py-2.5 px-4">
+                  <span class="inline-block px-2.5 py-1 rounded-md text-[10px] font-semibold" :class="getEstadoBadge(p.estado)">
                     {{ p.estado }}
                   </span>
                 </td>
-                <td class="py-3 px-4 text-xs text-slate-400 whitespace-nowrap">
+                <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap text-[11px]">
                   {{ formatHora(p.created_at) }}
                 </td>
               </tr>
               <tr v-if="ultimosPasos.length === 0">
-                <td colspan="6" class="text-center py-8 text-slate-500">
-                  Esperando registros de caseta...
+                <td colspan="6" class="text-center py-12 text-slate-400 text-xs">
+                  Aún no se han recibido tránsitos hoy.
                 </td>
               </tr>
             </tbody>
@@ -127,45 +158,46 @@
         </div>
       </div>
 
-      <!-- Feed de Alertas en Tiempo Real (1 columna) -->
-      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl flex flex-col">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-bold text-white">Alertas de Caseta</h2>
-          <span class="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full font-medium">
-            Automáticas
-          </span>
+      <!-- Feed de Alertas (1 columna) -->
+      <div class="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-5 flex flex-col">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Alertas de Caseta</h2>
+            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+          </div>
+          <span class="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{{ ultimasAlertas.length }} registradas</span>
         </div>
 
-        <div class="space-y-3 overflow-y-auto max-h-[480px] pr-1 flex-1">
+        <div class="space-y-3 overflow-y-auto max-h-[460px] pr-1 flex-1">
           <div
             v-for="a in ultimasAlertas"
             :key="a.id"
-            class="p-4 rounded-xl border transition"
-            :class="a.atendida ? 'bg-slate-900/40 border-slate-700/60 opacity-60' : 'bg-red-500/10 border-red-500/40'"
+            class="p-3.5 rounded-xl border text-xs transition-all animate-new-row"
+            :class="a.atendida ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-amber-50/70 border-amber-200 shadow-xs'"
           >
-            <div class="flex items-start justify-between gap-2">
-              <span class="text-xs font-bold uppercase tracking-wider" :class="a.atendida ? 'text-slate-400' : 'text-red-400'">
-                {{ a.tipo === 'placa_no_registrada' ? '🚨 Placa No Registrada' : '⚠️ Saldo Insuficiente' }}
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <span class="font-bold tracking-tight" :class="a.atendida ? 'text-slate-500' : 'text-amber-900'">
+                {{ a.tipo === 'placa_no_registrada' ? '⚠️ Vehículo No Registrado' : '⚠️ Saldo Insuficiente' }}
               </span>
-              <span class="text-[11px] text-slate-500">{{ formatHora(a.created_at) }}</span>
+              <span class="text-[10px] text-slate-400">{{ formatHora(a.created_at) }}</span>
             </div>
-            <p class="text-sm text-slate-200 mt-1 font-medium">{{ a.mensaje }}</p>
-            <div class="mt-3 flex items-center justify-between text-xs pt-2 border-t border-slate-700/50">
-              <span :class="a.atendida ? 'text-slate-500' : 'text-red-300 font-semibold'">
-                {{ a.atendida ? 'Atendida' : 'Requiere Intervención' }}
+            <p class="text-slate-700 leading-relaxed mb-2.5 font-medium">{{ a.mensaje }}</p>
+            <div class="flex items-center justify-between pt-2 border-t border-slate-200/60">
+              <span class="text-[10px] font-semibold" :class="a.atendida ? 'text-slate-400' : 'text-amber-800'">
+                {{ a.atendida ? 'Atendida' : 'Requiere Cobro Manual' }}
               </span>
               <button
                 v-if="!a.atendida"
                 @click="atenderAlerta(a.id)"
-                class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-[11px] transition"
+                class="px-2.5 py-1 bg-white hover:bg-slate-50 active:scale-95 border border-slate-300 text-slate-700 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
               >
                 Marcar Atendida
               </button>
             </div>
           </div>
 
-          <div v-if="ultimasAlertas.length === 0" class="text-center py-12 text-slate-500 text-sm">
-            No hay alertas pendientes en este momento.
+          <div v-if="ultimasAlertas.length === 0" class="text-center py-12 text-slate-400 text-xs">
+            No hay alertas registradas en este momento.
           </div>
         </div>
       </div>
@@ -185,15 +217,17 @@ const stats = ref({
 
 const ultimosPasos = ref([])
 const ultimasAlertas = ref([])
-const aiStatus = ref('online')
+const simulando = ref(false)
+const cargando = ref(false)
 let eventSource = null
+let pollInterval = null
 
 function getEstadoBadge(estado) {
   switch (estado) {
-    case 'Registrada y con paso': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-    case 'Registrada sin paso': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-    case 'Identificada no registrada': return 'bg-red-500/20 text-red-400 border border-red-500/30'
-    default: return 'bg-slate-700 text-slate-300'
+    case 'Registrada y con paso': return 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+    case 'Registrada sin paso': return 'bg-blue-50 text-blue-800 border border-blue-200'
+    case 'Identificada no registrada': return 'bg-rose-50 text-rose-800 border border-rose-200'
+    default: return 'bg-slate-100 text-slate-700 border border-slate-200'
   }
 }
 
@@ -204,15 +238,18 @@ function formatHora(dateStr) {
 }
 
 async function cargarResumen() {
+  cargando.value = true
   try {
     const res = await api.get('/panel/resumen')
     stats.value.total_pasos = res.data.total_pasos
     stats.value.recaudacion_hoy = res.data.recaudacion_hoy
     stats.value.alertas_pendientes = res.data.alertas_pendientes
-    ultimosPasos.value = res.data.ultimos_pasos
-    ultimasAlertas.value = res.data.ultimas_alertas
+    ultimosPasos.value = res.data.ultimos_pasos || []
+    ultimasAlertas.value = res.data.ultimas_alertas || []
   } catch (err) {
     console.error('Error cargando resumen:', err)
+  } finally {
+    cargando.value = false
   }
 }
 
@@ -226,11 +263,11 @@ async function atenderAlerta(id) {
 }
 
 async function simularPaso() {
+  simulando.value = true
   try {
     const placas = ['4021XYZ', '3142ABC', '9999INV', '1540QWE', '8888EVASION']
     const randomPlaca = placas[Math.floor(Math.random() * placas.length)]
-    
-    // Generar un canvas mínimo o SVG en base64 para cumplir requerimiento de frame
+
     const canvas = document.createElement('canvas')
     canvas.width = 100
     canvas.height = 100
@@ -241,43 +278,54 @@ async function simularPaso() {
       mock_placa: randomPlaca,
       caseta_id: 1,
     })
-    cargarResumen()
+    await cargarResumen()
   } catch (err) {
     console.error('Error simulando paso:', err)
+  } finally {
+    simulando.value = false
   }
 }
 
-function iniciarSSE() {
+function iniciarTiempoReal() {
   const url = `${api.defaults.baseURL}/stream/eventos`
-  eventSource = new EventSource(url)
+  try {
+    eventSource = new EventSource(url)
 
-  eventSource.addEventListener('nuevo_paso', (e) => {
-    const paso = JSON.parse(e.data)
-    ultimosPasos.value.unshift(paso)
-    if (ultimosPasos.value.length > 10) ultimosPasos.value.pop()
-    stats.value.total_pasos += 1
-    stats.value.recaudacion_hoy += parseFloat(paso.monto)
-  })
+    eventSource.addEventListener('nuevo_paso', (e) => {
+      const paso = JSON.parse(e.data)
+      ultimosPasos.value.unshift(paso)
+      if (ultimosPasos.value.length > 10) ultimosPasos.value.pop()
+      stats.value.total_pasos += 1
+      stats.value.recaudacion_hoy += parseFloat(paso.monto)
+    })
 
-  eventSource.addEventListener('nueva_alerta', (e) => {
-    const alerta = JSON.parse(e.data)
-    ultimasAlertas.value.unshift(alerta)
-    if (ultimasAlertas.value.length > 10) ultimasAlertas.value.pop()
-    stats.value.alertas_pendientes += 1
-  })
+    eventSource.addEventListener('nueva_alerta', (e) => {
+      const alerta = JSON.parse(e.data)
+      ultimasAlertas.value.unshift(alerta)
+      if (ultimasAlertas.value.length > 10) ultimasAlertas.value.pop()
+      stats.value.alertas_pendientes += 1
+    })
 
-  eventSource.onerror = () => {
-    // Si se interrumpe, el navegador reconecta automáticamente
+    eventSource.onerror = () => {
+      // Si SSE tiene problemas en dev, el fallback se encarga
+    }
+  } catch (e) {
+    console.warn('SSE no disponible, usando polling:', e)
   }
+
+  // Sondeo cada 4 segundos como respaldo ultra-confiable
+  pollInterval = setInterval(() => {
+    cargarResumen()
+  }, 4000)
 }
 
 onMounted(() => {
   cargarResumen()
-  iniciarSSE()
+  iniciarTiempoReal()
 })
 
 onUnmounted(() => {
   if (eventSource) eventSource.close()
+  if (pollInterval) clearInterval(pollInterval)
 })
 </script>
-

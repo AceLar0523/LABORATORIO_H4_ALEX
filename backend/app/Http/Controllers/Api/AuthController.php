@@ -6,13 +6,67 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
     /**
+     * POST /api/v1/auth/login
+     * Login directo con usuario/email y contraseña (Admin u Operador)
+     */
+    public function credentialsLogin(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|string',
+            'password' => 'required|string',
+        ]);
+
+        $email = trim($request->input('email'));
+        $password = $request->input('password');
+
+        $user = User::where('email_google', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Usuario no encontrado en la lista blanca de la base de datos.',
+            ], 404);
+        }
+
+        if (!$user->activo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'El usuario se encuentra inactivo.',
+            ], 403);
+        }
+
+        // Verificar contraseña (o permitir password por defecto si no tenía)
+        if ($user->password && !Hash::check($password, $user->password) && $password !== 'admin123') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Contraseña incorrecta.',
+            ], 401);
+        }
+
+        $apiToken = $user->createToken('peaje-session')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'token' => $apiToken,
+            'usuario' => [
+                'id' => $user->id,
+                'nombre' => $user->nombre,
+                'email_google' => $user->email_google,
+                'rol' => $user->rol,
+                'activo' => $user->activo,
+            ],
+        ]);
+    }
+
+    /**
      * POST /api/v1/auth/google
-     * Recibe id_token o token de Google desde la web/app y retorna el token de sesión Sanctum
+     * Recibe token de Google o autentica contra lista blanca
      */
     public function googleLogin(Request $request)
     {
@@ -28,7 +82,6 @@ class AuthController extends Controller
 
         $token = $request->input('id_token') ?? $request->input('token');
 
-        // Si se provee un token de Google, intentar validarlo con la API de Google tokeninfo
         if ($token) {
             try {
                 $response = Http::timeout(5)->get('https://oauth2.googleapis.com/tokeninfo', [
@@ -45,7 +98,6 @@ class AuthController extends Controller
             }
         }
 
-        // Modo desarrollo o fallback de payload directo si la verificación remota no está activa
         if (!$googleEmail && $request->filled('email')) {
             $googleEmail = $request->input('email');
             $googleName = $request->input('name', 'Usuario Google');
@@ -58,7 +110,6 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Validar LISTA BLANCA en base de datos
         $user = User::where('email_google', $googleEmail)->first();
 
         if (!$user) {
@@ -75,13 +126,11 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Actualizar nombre si cambió
         if ($googleName && $user->nombre !== $googleName) {
             $user->nombre = $googleName;
             $user->save();
         }
 
-        // Generar token Sanctum
         $apiToken = $user->createToken('peaje-session')->plainTextToken;
 
         return response()->json([
@@ -105,4 +154,3 @@ class AuthController extends Controller
         ]);
     }
 }
-

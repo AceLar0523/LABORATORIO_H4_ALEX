@@ -90,7 +90,7 @@ class AgenteController extends Controller
         $respuestaBase = $this->generarRespuestaEstructurada($estado, $placaNormalizada, $info);
 
         // Integración con OLLAMA (en RunPod o Local) si está configurado
-        $ollamaUrl = env('OLLAMA_URL', 'http://127.0.0.1:11434');
+        $ollamaUrl = rtrim(env('OLLAMA_URL', 'http://127.0.0.1:11434'), '/');
         $ollamaModel = env('OLLAMA_MODEL', 'llama3.2:3b');
         $respuestaFinal = $respuestaBase;
 
@@ -109,13 +109,29 @@ class AgenteController extends Controller
                 . "Si el estado es 'Identificada no registrada' o 'No existe' y hay sugerencias de placas, menciónalas preguntando '¿Quisiste decir alguna de estas placas registradas?: ...'. "
                 . "Mantén las viñetas con los datos relevantes (propietario, saldo, último paso o advertencia).";
 
-            $ollamaResponse = Http::timeout(4)->post("{$ollamaUrl}/api/generate", [
-                'model' => $ollamaModel,
-                'prompt' => $promptOllama,
-                'stream' => false,
-            ]);
+            $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://127.0.0.1:8000'), '/');
+            $ollamaResponse = null;
 
-            if ($ollamaResponse->successful()) {
+            try {
+                $ollamaResponse = Http::timeout(12)->post("{$ollamaUrl}/api/generate", [
+                    'model' => $ollamaModel,
+                    'prompt' => $promptOllama,
+                    'stream' => false,
+                ]);
+            } catch (\Exception $e) {
+                // Si el puerto directo de Ollama no responde, intentar mediante el proxy en FastAPI
+                try {
+                    $ollamaResponse = Http::timeout(25)->post("{$inferenceUrl}/ollama/generate", [
+                        'model' => $ollamaModel,
+                        'prompt' => $promptOllama,
+                        'stream' => false,
+                    ]);
+                } catch (\Exception $ex) {
+                    $ollamaResponse = null;
+                }
+            }
+
+            if ($ollamaResponse && $ollamaResponse->successful()) {
                 $llmOutput = trim($ollamaResponse->json()['response'] ?? '');
                 if (!empty($llmOutput)) {
                     $respuestaFinal = $llmOutput;

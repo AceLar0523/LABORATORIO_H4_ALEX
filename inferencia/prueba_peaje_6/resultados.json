@@ -1,0 +1,100 @@
+[
+  {
+    "imagen": "8b6e8f46ab0f4c09b171e96162259b99_jpg.rf.5597054fc1c1fbdb59a69e049b60b541.jpg",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_6/res_8b6e8f46ab0f4c09b171e96162259b99_jpg.rf.5597054fc1c1fbdb59a69e049b60b541.jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "bus",
+        "confianza": 0.961,
+        "box": [
+          35.6,
+          172.3,
+          453.9,
+          447.6
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "3/4",
+        "placa": "",
+        "confianza_ocr": 0.798
+      }
+    ]
+  },
+  {
+    "imagen": "30f2f3f2307941c881af7190a746c575_jpg.rf.2d3f811dfcb06162cb254ab133f20616.jpg",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_6/res_30f2f3f2307941c881af7190a746c575_jpg.rf.2d3f811dfcb06162cb254ab133f20616.jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "bus",
+        "confianza": 0.906,
+        "box": [
+          291.3,
+          259.4,
+          370.9,
+          405.5
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "lateral",
+        "placa": "333",
+        "confianza_ocr": 0.48
+      },
+      {
+        "id": 2,
+        "categoria": "bus",
+        "confianza": 0.907,
+        "box": [
+          0.0,
+          1.7,
+          258.6,
+          640.0
+        ],
+        "ejes": 2,
+        "pasajeros": 1,
+        "vista": "3/4",
+        "placa": "SIN_PLACA",
+        "confianza_ocr": 0.0
+      }
+    ]
+  },
+  {
+    "imagen": "72bc54e4-fdeb-44ae-9a92-1251ade5298e_jpg.rf.93e94dff2c638052051715675c9e5e6c.jpg",
+    "salida_anotada": "/home/alele/Documentos/peaje-inteligente/inferencia/prueba_peaje_6/res_72bc54e4-fdeb-44ae-9a92-1251ade5298e_jpg.rf.93e94dff2c638052051715675c9e5e6c.jpg",
+    "vehiculos": [
+      {
+        "id": 1,
+        "categoria": "auto",
+        "confianza": 0.919,
+        "box": [
+          166.4,
+          155.7,
+          483.9,
+          564.4
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "lateral",
+        "placa": "VBP3477",
+        "confianza_ocr": 1.0
+      },
+      {
+        "id": 2,
+        "categoria": "auto",
+        "confianza": 0.889,
+        "box": [
+          0.1,
+          160.1,
+          224.3,
+          499.2
+        ],
+        "ejes": 2,
+        "pasajeros": 0,
+        "vista": "3/4",
+        "placa": "SIN_PLACA",
+        "confianza_ocr": 0.0
+      }
+    ]
+  }
+]
