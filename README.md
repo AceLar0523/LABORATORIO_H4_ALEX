@@ -70,6 +70,8 @@ App móvil ──video/frames──► Aplicación web (subdominio HTTPS)
 
 ## Instrucciones de Despliegue y Recreación de Entornos
 
+> **Guía paso a paso para principiantes (\$0 con GitHub Student Pack):** consulta [docs/guia_despliegue_produccion.md](file:///home/alele/Documentos/peaje-inteligente/docs/guia_despliegue_produccion.md) para ver cómo obtener dominio gratis, VPS gratis (Azure/DigitalOcean), BD gratis, certificado SSL, OAuth y compilación del APK.
+
 ### 1. Inferencia en RunPod GPU Cloud (`inferencia/`)
 
 Los archivos `inferencia/requirements.txt` y `inferencia/environment.yml` fijan versiones exactas para garantizar reproducibilidad (`+5 pts`).
