@@ -6,7 +6,14 @@
         <h1 class="text-xl font-bold text-slate-900 tracking-tight">Tarifas y Casetas de Peaje</h1>
         <p class="text-xs text-slate-500 mt-0.5">Configuración de tarifas por categoría/ejes y puntos de control de caseta</p>
       </div>
-      <div v-if="esAdmin" class="flex items-center gap-2">
+      <div v-if="esAdmin" class="flex flex-wrap items-center gap-2">
+        <button
+          @click="confirmarRestaurarTarifas"
+          class="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          <span>Restaurar Tarifas Oficiales</span>
+        </button>
         <button
           @click="abrirModalTarifa()"
           class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
@@ -211,8 +218,25 @@ async function cargarTodo() {
 function abrirModalTarifa(t = null) {
   formTarifa.value = t
     ? { id: t.id, categoria: t.categoria, ejes: Number(t.ejes), monto: Number(t.monto) }
-    : { id: null, categoria: 'auto', ejes: 2, monto: 10 }
+    : { id: null, categoria: 'auto', ejes: 2, monto: 5 }
   modalTarifa.value = true
+}
+
+function confirmarRestaurarTarifas() {
+  iosDialog.confirmar({
+    title: '¿Restaurar tarifas oficiales?',
+    message: 'Se cargarán las tarifas realistas de referencia en Bs. (Moto Bs. 2, Auto Bs. 5, Minibús Bs. 7, Bus Bs. 12-18, Camión Bs. 12-42, Tráiler Bs. 28-45).',
+    confirmLabel: 'Restaurar',
+    onConfirm: async () => {
+      try {
+        const res = await api.post('/tarifas/restaurar')
+        tarifas.value = res.data?.data || []
+        toast.success('Tarifas oficiales restauradas')
+      } catch (err) {
+        toast.error('No se pudieron restaurar las tarifas', { description: err.response?.data?.message || err.message })
+      }
+    },
+  })
 }
 
 function abrirModalCaseta(c = null) {

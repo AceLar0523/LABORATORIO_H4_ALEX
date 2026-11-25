@@ -202,11 +202,51 @@ class CasetaController extends Controller
     }
 
     /**
+     * Escala realista de tarifas de peaje en Bs.
+     */
+    public static function tarifasPorDefecto(): array
+    {
+        return [
+            ['categoria' => 'moto', 'ejes' => 2, 'monto' => 2.00],
+            ['categoria' => 'auto', 'ejes' => 2, 'monto' => 5.00],
+            ['categoria' => 'minibus', 'ejes' => 2, 'monto' => 7.00],
+            ['categoria' => 'bus', 'ejes' => 2, 'monto' => 12.00],
+            ['categoria' => 'bus', 'ejes' => 3, 'monto' => 18.00],
+            ['categoria' => 'camion', 'ejes' => 2, 'monto' => 12.00],
+            ['categoria' => 'camion', 'ejes' => 3, 'monto' => 18.00],
+            ['categoria' => 'camion', 'ejes' => 4, 'monto' => 26.00],
+            ['categoria' => 'camion', 'ejes' => 5, 'monto' => 34.00],
+            ['categoria' => 'camion', 'ejes' => 6, 'monto' => 42.00],
+            ['categoria' => 'trailer', 'ejes' => 4, 'monto' => 28.00],
+            ['categoria' => 'trailer', 'ejes' => 5, 'monto' => 36.00],
+            ['categoria' => 'trailer', 'ejes' => 6, 'monto' => 45.00],
+        ];
+    }
+
+    /**
      * Listado y gestión de Tarifas
      */
     public function tarifas()
     {
         return response()->json(Tarifa::orderBy('categoria')->orderBy('ejes')->get());
+    }
+
+    public function restaurarTarifas(Request $request)
+    {
+        $this->autorizarAdmin($request);
+
+        foreach (self::tarifasPorDefecto() as $t) {
+            Tarifa::updateOrCreate(
+                ['categoria' => $t['categoria'], 'ejes' => $t['ejes']],
+                ['monto' => $t['monto']]
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tarifas realistas restauradas correctamente.',
+            'data' => Tarifa::orderBy('categoria')->orderBy('ejes')->get(),
+        ]);
     }
 
     public function storeTarifa(Request $request)

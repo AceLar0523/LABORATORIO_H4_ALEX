@@ -50,6 +50,8 @@ Route::prefix('v1')->group(function () {
 
         // Recursos adicionales del sistema
         Route::get('/pasos', [PasoController::class, 'index']);
+        Route::delete('/pasos/limpiar/sin-placa', [PasoController::class, 'limpiarSinPlaca']);
+        Route::delete('/pasos/{id}', [PasoController::class, 'destroy']);
         Route::get('/panel/resumen', [PasoController::class, 'resumenGeneral']);
         Route::apiResource('/vehiculos', VehiculoController::class);
         Route::get('/casetas', [CasetaController::class, 'index']);
@@ -59,6 +61,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/alertas', [CasetaController::class, 'alertas']);
         Route::patch('/alertas/{id}/atender', [CasetaController::class, 'atenderAlerta']);
         Route::get('/tarifas', [CasetaController::class, 'tarifas']);
+        Route::post('/tarifas/restaurar', [CasetaController::class, 'restaurarTarifas']);
         Route::post('/tarifas', [CasetaController::class, 'storeTarifa']);
         Route::put('/tarifas/{id}', [CasetaController::class, 'updateTarifa']);
         Route::delete('/tarifas/{id}', [CasetaController::class, 'destroyTarifa']);

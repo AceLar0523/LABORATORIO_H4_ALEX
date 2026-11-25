@@ -239,7 +239,7 @@ class PeajeEndToEndFlowTest extends TestCase
         $operadorToken = $this->loginConGoogle('operador@peaje.com');
         $this->app['auth']->forgetGuards();
 
-        // 1. Vehículo registrado con saldo suficiente (3142ABC tiene Bs. 50.00, auto 2 ejes = Bs. 10.00)
+        // 1. Vehículo registrado con saldo suficiente (3142ABC tiene Bs. 50.00, auto 2 ejes = Bs. 5.00)
         $this->resetHttpFake([
             'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
                 'placa' => '3142-ABC',
@@ -261,7 +261,7 @@ class PeajeEndToEndFlowTest extends TestCase
             ->assertJsonPath('paso.pasajeros', 3)
             ->assertJsonPath('alerta', null);
 
-        $this->assertEquals('40.00', Vehiculo::where('placa', '3142ABC')->first()->saldo);
+        $this->assertEquals('45.00', Vehiculo::where('placa', '3142ABC')->first()->saldo);
         Storage::disk('public')->assertExists(str_replace('/storage/', '', $res1->json('paso.imagen_url')));
 
         // 2. Vehículo registrado SIN saldo (1209OPL tiene Bs. 0.00)
@@ -282,7 +282,7 @@ class PeajeEndToEndFlowTest extends TestCase
         ]);
         $res2->assertStatus(201)->assertJsonPath('alerta.tipo', 'sin_saldo');
 
-        // 3. Placa NO registrada -> alerta placa_no_registrada
+        // 3. Placa NO registrada -> alerta placa_no_registrada (camión 3 ejes = Bs. 18.00)
         $this->resetHttpFake([
             'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
                 'placa' => '8888NUE',
@@ -300,7 +300,7 @@ class PeajeEndToEndFlowTest extends TestCase
         ]);
         $res3->assertStatus(201)
             ->assertJsonPath('paso.estado', 'Identificada no registrada')
-            ->assertJsonPath('paso.monto', '35.00')
+            ->assertJsonPath('paso.monto', '18.00')
             ->assertJsonPath('alerta.tipo', 'placa_no_registrada');
 
         $alertaId = $res3->json('alerta.id');
@@ -445,5 +445,201 @@ class PeajeEndToEndFlowTest extends TestCase
             ->assertJsonPath('status', 'online')
             ->assertJsonPath('ollama_status', 'online')
             ->assertJsonPath('modelos.m4_passengers', true);
+    }
+
+    public function test_modo_live_ignora_sin_placa_y_evita_duplicados_por_cooldown(): void
+    {
+        Storage::fake('public');
+        $operadorToken = $this->loginConGoogle('operador@peaje.com');
+        $this->app['auth']->forgetGuards();
+
+        $pasosAntes = Paso::count();
+        $saldoInicial = (float) Vehiculo::where('placa', '3142ABC')->first()->saldo;
+
+        // 1. Frame vacío sin vehículo ni placa -> 200 sin registrar
+        $this->resetHttpFake([
+            'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
+                'vehiculo_detectado' => false,
+                'placa' => 'SIN_PLACA',
+                'confianza' => 0.0,
+                'categoria' => 'ninguno',
+                'ejes' => 0,
+                'pasajeros' => 0,
+                'latencia_ms' => 30.0,
+                'imagen_size' => [640, 480],
+                'vehiculos' => [],
+                'detalles' => ['m2' => ['total_vehiculos' => 0]],
+            ], 200),
+        ]);
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'sin_vehiculo');
+        $this->assertEquals($pasosAntes, Paso::count());
+
+        // 1b. Texto falso en calle cuando M2 detecta 0 vehículos -> también ignorado
+        $this->resetHttpFake([
+            'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
+                'vehiculo_detectado' => false,
+                'placa' => 'AB1234',
+                'confianza' => 0.5,
+                'categoria' => 'ninguno',
+                'ejes' => 0,
+                'pasajeros' => 0,
+                'latencia_ms' => 28.0,
+                'imagen_size' => [640, 480],
+                'vehiculos' => [],
+                'detalles' => ['m2' => ['total_vehiculos' => 0]],
+            ], 200),
+        ]);
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'sin_vehiculo');
+        $this->assertEquals($pasosAntes, Paso::count());
+
+        // 2. Vehículo presente pero OCR basura ("Y4") -> 200 esperando_placa
+        $this->resetHttpFake([
+            'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
+                'placa' => 'Y4',
+                'confianza' => 0.4,
+                'categoria' => 'auto',
+                'ejes' => 2,
+                'pasajeros' => 1,
+                'latencia_ms' => 35.0,
+                'imagen_size' => [640, 480],
+                'vehiculos' => [['id' => 1, 'categoria' => 'auto', 'box' => [10, 10, 400, 400]]],
+                'detalles' => ['m2' => ['total_vehiculos' => 1, 'bbox' => [10, 10, 400, 400]]],
+            ], 200),
+        ]);
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'esperando_placa');
+        $this->assertEquals($pasosAntes, Paso::count());
+
+        // 2b. Vehículo lejano (< 8% del frame, ej. en la calle) -> 200 vehiculo_lejano sin registrar
+        $this->resetHttpFake([
+            'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
+                'vehiculo_detectado' => true,
+                'placa' => '3142-ABC',
+                'confianza' => 0.95,
+                'categoria' => 'auto',
+                'ejes' => 2,
+                'pasajeros' => 1,
+                'latencia_ms' => 35.0,
+                'imagen_size' => [640, 480],
+                'vehiculos' => [['id' => 1, 'categoria' => 'auto', 'box' => [10, 10, 110, 110]]],
+                'detalles' => ['m2' => ['total_vehiculos' => 1, 'bbox' => [10, 10, 110, 110]]],
+            ], 200),
+        ]);
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'vehiculo_lejano');
+        $this->assertEquals($pasosAntes, Paso::count());
+
+        // 2c. Solo Vista Previa -> devuelve detección pero NO guarda nada
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+            'solo_preview' => true,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'solo_preview');
+        $this->assertEquals($pasosAntes, Paso::count());
+
+        // 3. Primera detección válida en vivo -> 201 nuevo_registro y descuenta saldo 1 vez (Bs. 5.00)
+        $this->resetHttpFake([
+            'https://mock-pod-8000.proxy.runpod.net/predict' => Http::response([
+                'vehiculo_detectado' => true,
+                'placa' => '3142-ABC',
+                'confianza' => 0.96,
+                'categoria' => 'auto',
+                'ejes' => 2,
+                'pasajeros' => 2,
+                'latencia_ms' => 42.0,
+                'imagen_size' => [640, 480],
+                'vehiculos' => [['id' => 1, 'categoria' => 'auto', 'box' => [20, 20, 500, 450]]],
+                'detalles' => [
+                    'm1' => ['placa' => '3142-ABC', 'bbox' => [200, 340, 320, 380]],
+                    'm2' => ['total_vehiculos' => 1, 'bbox' => [20, 20, 500, 450]],
+                    'm3' => ['ejes' => 2, 'puntos' => [[120.0, 410.0, 0.9], [410.0, 410.0, 0.9]]],
+                    'm4' => ['pasajeros' => 2, 'cajas' => [[150.0, 100.0, 230.0, 220.0]]],
+                ],
+            ], 200),
+        ]);
+        $nuevoPasoResp = $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+            'cooldown_segundos' => 20,
+        ]);
+        $nuevoPasoResp->assertStatus(201)
+            ->assertJsonPath('registrado', true)
+            ->assertJsonPath('motivo', 'nuevo_registro')
+            ->assertJsonPath('deteccion.m3.puntos.0.0', 120);
+
+        $pasoNuevoId = $nuevoPasoResp->json('paso.id');
+        $this->assertEquals($pasosAntes + 1, Paso::count());
+        $this->assertEquals($saldoInicial - 5.00, (float) Vehiculo::where('placa', '3142ABC')->first()->saldo);
+
+        // 4. Mismo vehículo 1 segundo después -> 200 duplicado_reciente sin cobrar doble
+        $this->withToken($operadorToken)->postJson('/api/v1/pasos/frame', [
+            'frame_base64' => $this->tinyJpegBase64,
+            'caseta_id' => 1,
+            'modo_live' => true,
+            'cooldown_segundos' => 20,
+        ])->assertStatus(200)
+            ->assertJsonPath('registrado', false)
+            ->assertJsonPath('motivo', 'duplicado_reciente');
+
+        $this->assertEquals($pasosAntes + 1, Paso::count());
+        $this->assertEquals($saldoInicial - 5.00, (float) Vehiculo::where('placa', '3142ABC')->first()->saldo);
+
+        // 5. Operador NO puede eliminar pasos ni restaurar tarifas (403); Admin sí puede y reembolsa saldo
+        $this->withToken($operadorToken)->deleteJson("/api/v1/pasos/{$pasoNuevoId}")->assertStatus(403);
+        $this->withToken($operadorToken)->postJson('/api/v1/tarifas/restaurar')->assertStatus(403);
+
+        $adminToken = $this->loginConGoogle('admin@peaje.com');
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($adminToken)->deleteJson("/api/v1/pasos/{$pasoNuevoId}")->assertStatus(200);
+        $this->assertEquals($saldoInicial, (float) Vehiculo::where('placa', '3142ABC')->first()->saldo);
+
+        // Crear paso falso SINPLACA y limpiarlo masivamente
+        Paso::create([
+            'placa_leida' => 'SIN_PLACA',
+            'placa_normalizada' => 'SINPLACA',
+            'confianza_ocr' => 0.0,
+            'categoria_detectada' => 'auto',
+            'ejes_detectados' => 2,
+            'monto' => 5.00,
+            'caseta_id' => 1,
+            'estado' => 'Identificada no registrada',
+        ]);
+        $this->withToken($adminToken)->deleteJson('/api/v1/pasos/limpiar/sin-placa')
+            ->assertStatus(200)
+            ->assertJsonPath('eliminados', 1);
+
+        // Restaurar tarifas oficiales tras borrar una
+        \App\Models\Tarifa::where('categoria', 'moto')->delete();
+        $this->withToken($adminToken)->postJson('/api/v1/tarifas/restaurar')
+            ->assertStatus(200)
+            ->assertJsonPath('success', true);
+        $this->assertEquals('2.00', \App\Models\Tarifa::where('categoria', 'moto')->first()->monto);
     }
 }

@@ -687,6 +687,11 @@ class PeajePipeline:
             except Exception as e:
                 print(f"[WARN M2]: {e}")
 
+        # Gate M2-primero: si M2 está cargado y no detecta ningún vehículo,
+        # no ejecutar M3/M4/M1 ni contar personas sueltas en la calle.
+        if self.m2 is not None and len(vehiculos) == 0:
+            return [], [], [], []
+
         # M3: Llantas / Ejes
         llantas: List[Dict[str, Any]] = []
         if self.m3 is not None:
@@ -785,7 +790,50 @@ class PeajePipeline:
         vehiculos_json = self.serializar_vehiculos(vehiculos)
 
         v0 = vehiculos[0] if vehiculos else None
-        p_principal = seleccionar_placa_principal(v0["placas"]) if (v0 and v0["placas"]) else None
+        if v0 is None:
+            return {
+                "vehiculo_detectado": False,
+                "placa": "SIN_PLACA",
+                "confianza": 0.0,
+                "formato_placa": "SIN_PLACA",
+                "categoria": "ninguno",
+                "ejes": 0,
+                "pasajeros": 0,
+                "latencia_ms": latencia_ms,
+                "imagen_size": [int(img_bgr.shape[1]), int(img_bgr.shape[0])],
+                "vehiculos": [],
+                "detalles": {
+                    "m1": {
+                        "placa": "SIN_PLACA",
+                        "confianza_ocr": 0.0,
+                        "formato_tipo": "SIN_PLACA",
+                        "bbox": None,
+                        "total_placas": 0,
+                    },
+                    "m2": {
+                        "categoria": "ninguno",
+                        "confianza_categoria": 0.0,
+                        "bbox": None,
+                        "total_vehiculos": 0,
+                    },
+                    "m3": {
+                        "ejes": 0,
+                        "ruedas_detectadas": 0,
+                        "vista": "ninguna",
+                        "nota": "Sin vehículo detectado por M2",
+                        "confianza_ejes": 0.0,
+                        "puntos": [],
+                        "cajas_ruedas": [],
+                    },
+                    "m4": {
+                        "pasajeros": 0,
+                        "total_personas_imagen": 0,
+                        "cajas": [],
+                    },
+                },
+            }
+
+        p_principal = seleccionar_placa_principal(v0["placas"]) if v0["placas"] else None
 
         # Si el vehículo #1 no tiene placa legible, buscar entre placas sueltas legibles
         if not p_principal or not p_principal.get("texto"):
@@ -811,16 +859,39 @@ class PeajePipeline:
             fmt_final = "SIN_PLACA"
             bbox_placa = None
 
-        categoria_final = str(v0["clase"]) if v0 else "auto"
-        conf_cat_final = float(v0["conf"]) if v0 else 0.0
-        bbox_veh_final = [float(c) for c in v0["box"]] if v0 else None
-        ejes_final = int(v0["ejes"]) if v0 else 2
-        ruedas_final = len(v0["llantas"]) if v0 else len(llantas)
-        vista_final = str(v0["vista"]) if v0 else "lateral"
-        nota_final = str(v0.get("nota", "")) if v0 else "Sin vehículo detectado"
-        pasajeros_final = int(v0.get("num_pasajeros", 0)) if v0 else len(pasajeros)
+        categoria_final = str(v0["clase"])
+        conf_cat_final = float(v0["conf"])
+        bbox_veh_final = [float(c) for c in v0["box"]]
+        ejes_final = int(v0["ejes"])
+        ruedas_final = len(v0["llantas"])
+        vista_final = str(v0["vista"])
+        nota_final = str(v0.get("nota", ""))
+        pasajeros_final = int(v0.get("num_pasajeros", 0))
+
+        ruedas_src = v0["llantas"]
+        puntos_ruedas: List[List[float]] = []
+        cajas_ruedas: List[List[float]] = []
+        for r in ruedas_src:
+            if r.get("box") is not None:
+                cajas_ruedas.append([round(float(c), 1) for c in r["box"]])
+            kps = r.get("kps")
+            if kps is not None:
+                for kp in kps:
+                    x = float(kp[0])
+                    y = float(kp[1])
+                    c = float(kp[2]) if len(kp) > 2 else 1.0
+                    if c >= 0.20 and (x > 0 or y > 0):
+                        puntos_ruedas.append([round(x, 1), round(y, 1), round(c, 2)])
+
+        pas_src = v0.get("pasajeros", [])
+        cajas_pasajeros = [
+            [round(float(c), 1) for c in p["box"]]
+            for p in pas_src
+            if p.get("box") is not None
+        ]
 
         resp: Dict[str, Any] = {
+            "vehiculo_detectado": True,
             "placa": placa_final,
             "confianza": round(conf_ocr_final, 3),
             "formato_placa": fmt_final,
@@ -828,6 +899,7 @@ class PeajePipeline:
             "ejes": ejes_final,
             "pasajeros": pasajeros_final,
             "latencia_ms": latencia_ms,
+            "imagen_size": [int(img_bgr.shape[1]), int(img_bgr.shape[0])],
             "vehiculos": vehiculos_json,
             "detalles": {
                 "m1": {
@@ -849,10 +921,13 @@ class PeajePipeline:
                     "vista": vista_final,
                     "nota": nota_final,
                     "confianza_ejes": 0.90 if ruedas_final >= 2 else 0.80,
+                    "puntos": puntos_ruedas,
+                    "cajas_ruedas": cajas_ruedas,
                 },
                 "m4": {
                     "pasajeros": pasajeros_final,
                     "total_personas_imagen": len(pasajeros),
+                    "cajas": cajas_pasajeros,
                 },
             },
         }

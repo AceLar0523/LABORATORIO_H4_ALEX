@@ -16,11 +16,24 @@ use Illuminate\Support\Facades\DB;
 
 class PasoController extends Controller
 {
+    private function autorizarAdmin(Request $request): void
+    {
+        $usuario = $request->user();
+        if (!$usuario || $usuario->rol !== 'administrador') {
+            abort(response()->json([
+                'success' => false,
+                'message' => 'Se requieren permisos de administrador para eliminar registros de pasos.',
+            ], 403));
+        }
+    }
+
     public function index(Request $request)
     {
-        $query = Paso::with(['caseta', 'usuario', 'alertas'])->orderBy('created_at', 'desc');
+        $query = Paso::with(['caseta', 'usuario', 'alertas'])
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc');
 
-        if ($request->has('estado')) {
+        if ($request->filled('estado')) {
             $query->where('estado', $request->input('estado'));
         }
 
@@ -33,6 +46,9 @@ class PasoController extends Controller
             'frame' => 'nullable|image|max:10240',
             'frame_base64' => 'nullable|string',
             'caseta_id' => 'nullable|exists:casetas,id',
+            'modo_live' => 'nullable|boolean',
+            'solo_preview' => 'nullable|boolean',
+            'cooldown_segundos' => 'nullable|integer|min:3|max:120',
         ]);
 
         $inferenceUrl = rtrim((string) config('services.inference.url', ''), '/');
@@ -45,6 +61,9 @@ class PasoController extends Controller
 
         $casetaId = $request->input('caseta_id', 1);
         $usuario = $request->user();
+        $modoLive = $request->boolean('modo_live');
+        $soloPreview = $request->boolean('solo_preview');
+        $cooldownSegundos = (int) $request->input('cooldown_segundos', 20);
 
         $imageData = null;
         $imageExtension = 'jpg';
@@ -67,8 +86,6 @@ class PasoController extends Controller
         }
 
         $filename = 'evidencia_' . time() . '_' . Str::random(6) . '.' . $imageExtension;
-        Storage::disk('public')->put('evidencias/' . $filename, $imageData);
-        $imagenUrl = '/storage/evidencias/' . $filename;
 
         $placaDetectada = 'SIN_PLACA';
         $confianzaOcr = 0.00;
@@ -76,8 +93,9 @@ class PasoController extends Controller
         $ejes = 2;
         $pasajeros = 0;
         $latenciaMs = 0.00;
+        $aiData = [];
 
-        // Llamar exclusivamente al motor de inferencia real en RunPod (M1 + M2 + M3 + M4)
+        // Llamar al motor de inferencia en RunPod antes de persistir evidencia
         $aiResolved = false;
         try {
             $response = Http::timeout(20)
@@ -85,8 +103,9 @@ class PasoController extends Controller
                 ->post($inferenceUrl . '/predict');
 
             if ($response->successful()) {
-                $aiData = $response->json();
-                if (is_array($aiData)) {
+                $parsed = $response->json();
+                if (is_array($parsed)) {
+                    $aiData = $parsed;
                     $placaRaw = trim((string)($aiData['placa'] ?? ''));
                     $placaDetectada = $placaRaw !== '' ? $placaRaw : 'SIN_PLACA';
                     $confianzaOcr = floatval($aiData['confianza'] ?? 0.00);
@@ -110,14 +129,132 @@ class PasoController extends Controller
         }
 
         $placaNormalizada = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placaDetectada));
+        $placaValida = $placaNormalizada !== ''
+            && !in_array($placaNormalizada, ['SINPLACA', 'NOLEIBLE', 'ILEGIBLE', 'NONE', 'NULL'], true)
+            && strlen($placaNormalizada) >= 5
+            && preg_match('/[A-Z]/', $placaNormalizada) === 1
+            && preg_match('/\d/', $placaNormalizada) === 1;
 
-        $tarifa = Tarifa::where('categoria', $categoria)->where('ejes', $ejes)->first();
-        if (!$tarifa) {
-            $tarifa = Tarifa::where('categoria', $categoria)->first();
+        $detalles = is_array($aiData['detalles'] ?? null) ? $aiData['detalles'] : [];
+        $vehiculosDetectados = is_array($aiData['vehiculos'] ?? null) ? $aiData['vehiculos'] : [];
+        $totalVehiculos = (int) ($detalles['m2']['total_vehiculos'] ?? count($vehiculosDetectados));
+
+        $hasM2Info = array_key_exists('vehiculo_detectado', $aiData)
+            || array_key_exists('m2', $detalles)
+            || array_key_exists('vehiculos', $aiData);
+
+        $vehiculoDetectado = array_key_exists('vehiculo_detectado', $aiData)
+            ? (bool) $aiData['vehiculo_detectado']
+            : ($hasM2Info ? ($totalVehiculos > 0 && $categoria !== 'ninguno') : ($categoria !== 'ninguno' && $placaValida));
+
+        $areaRelativa = null;
+        $imgSize = $aiData['imagen_size'] ?? null;
+        $m2Bbox = $detalles['m2']['bbox'] ?? null;
+        if (is_array($imgSize) && count($imgSize) >= 2 && is_array($m2Bbox) && count($m2Bbox) >= 4) {
+            $imgArea = max(1.0, (float) $imgSize[0] * (float) $imgSize[1]);
+            $boxArea = max(0.0, ((float) $m2Bbox[2] - (float) $m2Bbox[0]) * ((float) $m2Bbox[3] - (float) $m2Bbox[1]));
+            $areaRelativa = $boxArea / $imgArea;
         }
-        $monto = $tarifa ? $tarifa->monto : 10.00;
 
-        $vehiculo = Vehiculo::where('placa', $placaNormalizada)->first();
+        $tarifa = ($vehiculoDetectado && $categoria !== 'ninguno')
+            ? (Tarifa::where('categoria', $categoria)->where('ejes', $ejes)->first()
+                ?? Tarifa::where('categoria', $categoria)->first())
+            : null;
+        $monto = $tarifa ? $tarifa->monto : ($vehiculoDetectado ? 5.00 : 0.00);
+
+        $deteccion = [
+            'vehiculo_detectado' => $vehiculoDetectado,
+            'area_relativa' => $areaRelativa !== null ? round($areaRelativa, 3) : null,
+            'imagen_size' => $imgSize,
+            'placa' => $placaDetectada,
+            'placa_normalizada' => $placaNormalizada,
+            'confianza_ocr' => $confianzaOcr,
+            'categoria' => $categoria,
+            'ejes' => $ejes,
+            'pasajeros' => $pasajeros,
+            'monto' => (float) $monto,
+            'latencia_ms' => $latenciaMs,
+            'm1' => $detalles['m1'] ?? null,
+            'm2' => $detalles['m2'] ?? null,
+            'm3' => $detalles['m3'] ?? null,
+            'm4' => $detalles['m4'] ?? null,
+            'vehiculos' => $vehiculosDetectados,
+        ];
+
+        $vehiculo = ($vehiculoDetectado && $placaValida)
+            ? Vehiculo::where('placa', $placaNormalizada)->first()
+            : null;
+
+        if ($soloPreview) {
+            return response()->json([
+                'success' => true,
+                'registrado' => false,
+                'motivo' => 'solo_preview',
+                'latencia_ms' => $latenciaMs,
+                'deteccion' => $deteccion,
+            ], 200);
+        }
+
+        // Lógica de caseta real en Modo Live: solo registra si M2 detecta un vehículo cercano con placa clara y sin duplicado
+        if ($modoLive) {
+            if (!$vehiculoDetectado) {
+                return response()->json([
+                    'success' => true,
+                    'registrado' => false,
+                    'motivo' => 'sin_vehiculo',
+                    'latencia_ms' => $latenciaMs,
+                    'deteccion' => $deteccion,
+                ], 200);
+            }
+
+            if ($areaRelativa !== null && $areaRelativa < 0.08) {
+                return response()->json([
+                    'success' => true,
+                    'registrado' => false,
+                    'motivo' => 'vehiculo_lejano',
+                    'latencia_ms' => $latenciaMs,
+                    'deteccion' => $deteccion,
+                ], 200);
+            }
+
+            if (!$placaValida || $confianzaOcr < 0.50) {
+                return response()->json([
+                    'success' => true,
+                    'registrado' => false,
+                    'motivo' => 'esperando_placa',
+                    'latencia_ms' => $latenciaMs,
+                    'deteccion' => $deteccion,
+                ], 200);
+            }
+
+            $pasoReciente = Paso::where('caseta_id', $casetaId)
+                ->where('placa_normalizada', $placaNormalizada)
+                ->where('created_at', '>=', now()->subSeconds($cooldownSegundos))
+                ->orderByDesc('id')
+                ->first();
+
+            if ($pasoReciente) {
+                return response()->json([
+                    'success' => true,
+                    'registrado' => false,
+                    'motivo' => 'duplicado_reciente',
+                    'paso' => $pasoReciente->load('caseta', 'alertas'),
+                    'vehiculo' => $vehiculo,
+                    'latencia_ms' => $latenciaMs,
+                    'deteccion' => $deteccion,
+                ], 200);
+            }
+        } elseif (!$vehiculoDetectado && !$placaValida) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se detectó ningún vehículo (M2) en la imagen.',
+                'deteccion' => $deteccion,
+            ], 422);
+        }
+
+        Storage::disk('public')->put('evidencias/' . $filename, $imageData);
+        $imagenUrl = '/storage/evidencias/' . $filename;
+
         $alertaGenerada = null;
 
         if ($vehiculo) {
@@ -166,10 +303,13 @@ class PasoController extends Controller
 
         return response()->json([
             'success' => true,
+            'registrado' => true,
+            'motivo' => $modoLive ? 'nuevo_registro' : 'registro_manual',
             'paso' => $paso->load('caseta', 'alertas'),
             'vehiculo' => $vehiculo,
             'latencia_ms' => $latenciaMs,
             'alerta' => $alertaGenerada,
+            'deteccion' => $deteccion,
         ], 201);
     }
 
@@ -205,6 +345,74 @@ class PasoController extends Controller
             'ultimos_pasos' => $ultimosPasos,
             'ultimas_alertas' => $ultimasAlertas,
             'timestamp' => now()->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/pasos/{id}
+     * Elimina un paso erróneo (solo administrador) y reembolsa saldo si fue cobrado.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $this->autorizarAdmin($request);
+        $paso = Paso::with('alertas')->findOrFail($id);
+
+        $sinCobro = $paso->alertas->contains(
+            fn ($a) => in_array($a->tipo, ['sin_saldo', 'vehiculo_inactivo'], true)
+        );
+
+        if ($paso->estado === 'Registrada y con paso' && !$sinCobro && !empty($paso->placa_normalizada)) {
+            $vehiculo = Vehiculo::where('placa', $paso->placa_normalizada)->first();
+            if ($vehiculo && (float) $paso->monto > 0) {
+                $vehiculo->increment('saldo', (float) $paso->monto);
+            }
+        }
+
+        if (!empty($paso->imagen_url) && str_starts_with((string) $paso->imagen_url, '/storage/')) {
+            $rel = str_replace('/storage/', '', (string) $paso->imagen_url);
+            Storage::disk('public')->delete($rel);
+        }
+
+        $paso->alertas()->delete();
+        $paso->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registro de paso eliminado correctamente.',
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/pasos/limpiar/sin-placa
+     * Limpia masivamente falsos registros sin placa legible (solo administrador).
+     */
+    public function limpiarSinPlaca(Request $request)
+    {
+        $this->autorizarAdmin($request);
+
+        $pasos = Paso::where(function ($q) {
+            $q->whereNull('placa_normalizada')
+                ->orWhere('placa_normalizada', '')
+                ->orWhereIn('placa_normalizada', ['SINPLACA', 'SIN_PLACA', 'NOLEIBLE', 'ILEGIBLE'])
+                ->orWhereRaw('LENGTH(placa_normalizada) < 4');
+        })->get();
+
+        $count = $pasos->count();
+        if ($count > 0) {
+            $ids = $pasos->pluck('id')->all();
+            foreach ($pasos as $p) {
+                if (!empty($p->imagen_url) && str_starts_with((string) $p->imagen_url, '/storage/')) {
+                    Storage::disk('public')->delete(str_replace('/storage/', '', (string) $p->imagen_url));
+                }
+            }
+            Alerta::whereIn('paso_id', $ids)->delete();
+            Paso::whereIn('id', $ids)->delete();
+        }
+
+        return response()->json([
+            'success' => true,
+            'eliminados' => $count,
+            'message' => "Se limpiaron {$count} registro(s) sin placa legible.",
         ]);
     }
 }

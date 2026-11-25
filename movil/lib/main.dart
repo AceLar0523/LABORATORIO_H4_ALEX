@@ -86,15 +86,9 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     const String envApiUrl = String.fromEnvironment('API_BASE_URL');
-    if (envApiUrl.isNotEmpty) {
-      _baseUrl = envApiUrl;
-    } else if (kIsWeb) {
-      _baseUrl = 'http://localhost:8000/api/v1';
-    } else if (defaultTargetPlatform == TargetPlatform.android) {
-      _baseUrl = 'http://10.0.2.2:8000/api/v1';
-    } else {
-      _baseUrl = 'http://192.168.1.207:8000/api/v1';
-    }
+    _baseUrl = envApiUrl.isNotEmpty
+        ? envApiUrl
+        : 'https://peaje.peaje-alele.me/api/v1';
     _checkSavedSession();
   }
 
@@ -536,7 +530,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -------------------------------------------------------------
-// PANTALLA PRINCIPAL CON NAVEGACIÓN
+// PANTALLA PRINCIPAL CON NAVEGACIÓN (3 PESTAÑAS)
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -581,10 +575,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     });
   }
 
+  String get _appBarTitle {
+    switch (_currentIndex) {
+      case 0:
+        return 'Caseta de Peaje';
+      case 1:
+        return 'Historial de Pasos';
+      default:
+        return 'Agente IA de Peaje';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool esAdmin = widget.user['rol'] == 'administrador';
     final screens = [
       ModoCasetaScreen(token: widget.token, baseUrl: widget.baseUrl),
+      HistorialPasosScreen(token: widget.token, baseUrl: widget.baseUrl, esAdmin: esAdmin),
       ModoConsultaScreen(
         token: widget.token,
         baseUrl: widget.baseUrl,
@@ -595,7 +602,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Caseta de Peaje' : 'Agente IA de Peaje'),
+        title: Text(_appBarTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout_outlined, size: 20),
@@ -618,6 +625,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             label: 'Modo Caseta',
           ),
           NavigationDestination(
+            icon: Icon(Icons.history_outlined, size: 20),
+            selectedIcon: Icon(Icons.history, size: 20, color: Color(0xFF0F172A)),
+            label: 'Historial',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.smart_toy_outlined, size: 20),
             selectedIcon: Icon(Icons.smart_toy, size: 20, color: Color(0xFF0F172A)),
             label: 'Agente IA',
@@ -629,7 +641,219 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// MODO CASETA (Saca Foto, Sube Foto, Video y Cámara en Live)
+// PINTOR DE PUNTOS Y CAJAS EN VIVO (M1 PLACA, M2 VEHÍCULO, M3 RUEDAS, M4 PASAJEROS)
+// -------------------------------------------------------------
+class _DetectionOverlayPainter extends CustomPainter {
+  final Map<String, dynamic>? deteccion;
+  final Size? fallbackImageSize;
+  final bool isLiveScanning;
+
+  const _DetectionOverlayPainter({
+    required this.deteccion,
+    required this.fallbackImageSize,
+    required this.isLiveScanning,
+  });
+
+  Size? _resolveSourceSize() {
+    final rawSize = deteccion?['imagen_size'];
+    if (rawSize is List && rawSize.length >= 2) {
+      final w = (rawSize[0] as num?)?.toDouble() ?? 0;
+      final h = (rawSize[1] as num?)?.toDouble() ?? 0;
+      if (w > 0 && h > 0) return Size(w, h);
+    }
+    return fallbackImageSize;
+  }
+
+  Rect? _mapBox(dynamic rawBox, double scale, double dx, double dy) {
+    if (rawBox is! List || rawBox.length < 4) return null;
+    final x1 = (rawBox[0] as num?)?.toDouble();
+    final y1 = (rawBox[1] as num?)?.toDouble();
+    final x2 = (rawBox[2] as num?)?.toDouble();
+    final y2 = (rawBox[3] as num?)?.toDouble();
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
+    return Rect.fromLTRB(
+      x1 * scale + dx,
+      y1 * scale + dy,
+      x2 * scale + dx,
+      y2 * scale + dy,
+    );
+  }
+
+  void _drawLabel(Canvas canvas, Offset pos, String text, Color bgColor) {
+    if (text.trim().isEmpty) return;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        pos.dx.clamp(4.0, 260.0),
+        (pos.dy - tp.height - 6).clamp(4.0, 280.0),
+        tp.width + 10,
+        tp.height + 4,
+      ),
+      const Radius.circular(5),
+    );
+    canvas.drawRRect(rect, Paint()..color = bgColor.withValues(alpha: 0.92));
+    tp.paint(canvas, Offset(rect.left + 5, rect.top + 2));
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (isLiveScanning) {
+      final guidePaint = Paint()
+        ..color = const Color(0xFF34D399).withValues(alpha: 0.75)
+        ..strokeWidth = 2.4
+        ..style = PaintingStyle.stroke;
+      const double pad = 16;
+      const double len = 22;
+      // Esquina superior izquierda
+      canvas.drawPath(
+        Path()
+          ..moveTo(pad, pad + len)
+          ..lineTo(pad, pad)
+          ..lineTo(pad + len, pad),
+        guidePaint,
+      );
+      // Esquina superior derecha
+      canvas.drawPath(
+        Path()
+          ..moveTo(size.width - pad - len, pad)
+          ..lineTo(size.width - pad, pad)
+          ..lineTo(size.width - pad, pad + len),
+        guidePaint,
+      );
+      // Esquina inferior izquierda
+      canvas.drawPath(
+        Path()
+          ..moveTo(pad, size.height - pad - len)
+          ..lineTo(pad, size.height - pad)
+          ..lineTo(pad + len, size.height - pad),
+        guidePaint,
+      );
+      // Esquina inferior derecha
+      canvas.drawPath(
+        Path()
+          ..moveTo(size.width - pad - len, size.height - pad)
+          ..lineTo(size.width - pad, size.height - pad)
+          ..lineTo(size.width - pad, size.height - pad - len),
+        guidePaint,
+      );
+    }
+
+    if (deteccion == null) return;
+    final src = _resolveSourceSize();
+    if (src == null || src.width <= 0 || src.height <= 0) return;
+
+    // Transformación BoxFit.cover idéntica a la del visor de cámara / foto
+    final double scaleX = size.width / src.width;
+    final double scaleY = size.height / src.height;
+    final double scale = scaleX > scaleY ? scaleX : scaleY;
+    final double dx = (size.width - src.width * scale) / 2.0;
+    final double dy = (size.height - src.height * scale) / 2.0;
+
+    // 1. M2: Caja de vehículo principal
+    final m2 = deteccion!['m2'];
+    final vehRect = m2 is Map ? _mapBox(m2['bbox'], scale, dx, dy) : null;
+    if (vehRect != null) {
+      final vehPaint = Paint()
+        ..color = const Color(0xFF10B981)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2;
+      canvas.drawRRect(RRect.fromRectAndRadius(vehRect, const Radius.circular(6)), vehPaint);
+      final cat = (deteccion!['categoria'] ?? 'auto').toString().toUpperCase();
+      final ejes = deteccion!['ejes'] ?? 2;
+      _drawLabel(canvas, Offset(vehRect.left, vehRect.top), '$cat · $ejes EJES', const Color(0xFF059669));
+    }
+
+    // 2. M4: Pasajeros en violeta
+    final m4 = deteccion!['m4'];
+    final pasCajas = m4 is Map ? m4['cajas'] : null;
+    if (pasCajas is List) {
+      final pasPaint = Paint()
+        ..color = const Color(0xFFA855F7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8;
+      for (final b in pasCajas) {
+        final r = _mapBox(b, scale, dx, dy);
+        if (r != null) {
+          canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(4)), pasPaint);
+        }
+      }
+    }
+
+    // 3. M3: Cajas y puntos clave de ruedas (cyan luminoso)
+    final m3 = deteccion!['m3'];
+    if (m3 is Map) {
+      final cajasRuedas = m3['cajas_ruedas'];
+      if (cajasRuedas is List) {
+        final wheelBoxPaint = Paint()
+          ..color = const Color(0xFF06B6D4).withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4;
+        for (final b in cajasRuedas) {
+          final r = _mapBox(b, scale, dx, dy);
+          if (r != null) {
+            canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(4)), wheelBoxPaint);
+          }
+        }
+      }
+
+      final puntos = m3['puntos'];
+      if (puntos is List) {
+        final haloPaint = Paint()..color = const Color(0xFF06B6D4).withValues(alpha: 0.35);
+        final dotPaint = Paint()..color = const Color(0xFF22D3EE);
+        final corePaint = Paint()..color = Colors.white;
+        for (final pt in puntos) {
+          if (pt is List && pt.length >= 2) {
+            final px = (pt[0] as num?)?.toDouble();
+            final py = (pt[1] as num?)?.toDouble();
+            if (px != null && py != null) {
+              final center = Offset(px * scale + dx, py * scale + dy);
+              canvas.drawCircle(center, 7.5, haloPaint);
+              canvas.drawCircle(center, 4.2, dotPaint);
+              canvas.drawCircle(center, 1.8, corePaint);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. M1: Caja de placa en ámbar
+    final m1 = deteccion!['m1'];
+    final placaRect = m1 is Map ? _mapBox(m1['bbox'], scale, dx, dy) : null;
+    if (placaRect != null) {
+      final platePaint = Paint()
+        ..color = const Color(0xFFF59E0B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4;
+      canvas.drawRRect(RRect.fromRectAndRadius(placaRect, const Radius.circular(4)), platePaint);
+      final placaTxt = (deteccion!['placa_normalizada'] ?? deteccion!['placa'] ?? '').toString();
+      if (placaTxt.isNotEmpty && placaTxt != 'SINPLACA' && placaTxt != 'SIN_PLACA') {
+        _drawLabel(canvas, Offset(placaRect.left, placaRect.top), placaTxt, const Color(0xFFD97706));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DetectionOverlayPainter oldDelegate) {
+    return oldDelegate.deteccion != deteccion ||
+        oldDelegate.fallbackImageSize != fallbackImageSize ||
+        oldDelegate.isLiveScanning != isLiveScanning;
+  }
+}
+
+// -------------------------------------------------------------
+// MODO CASETA (Saca Foto, Sube Foto, Video y Cámara en Live con Overlays)
 // -------------------------------------------------------------
 class ModoCasetaScreen extends StatefulWidget {
   final String token;
@@ -643,8 +867,13 @@ class ModoCasetaScreen extends StatefulWidget {
 class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
   final ImagePicker _picker = ImagePicker();
   Uint8List? _capturedImageBytes;
+  Size? _capturedImageSize;
   bool _processing = false;
   Map<String, dynamic>? _lastResult;
+  Map<String, dynamic>? _liveDeteccion;
+  String _liveStatusMotivo = '';
+  String? _nuevoRegistroPlaca;
+  Timer? _nuevoRegistroTimer;
 
   // Video Controller
   VideoPlayerController? _videoController;
@@ -654,6 +883,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
   // Live Camera Controller & Scanner Timer
   CameraController? _cameraController;
   bool _isLiveScanning = false;
+  bool _autoRegistrarLive = true;
   Timer? _liveScanTimer;
   bool _isCameraInitialized = false;
 
@@ -698,27 +928,65 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
   @override
   void dispose() {
     _liveScanTimer?.cancel();
+    _nuevoRegistroTimer?.cancel();
     _cameraController?.dispose();
     _videoController?.dispose();
     super.dispose();
+  }
+
+  void _mostrarBannerNuevoRegistro(String placa) {
+    _nuevoRegistroTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _nuevoRegistroPlaca = placa;
+    });
+    _nuevoRegistroTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _nuevoRegistroPlaca = null;
+        });
+      }
+    });
+  }
+
+  Future<void> _actualizarFallbackImageSize(Uint8List bytes) async {
+    try {
+      final completer = Completer<Size>();
+      ui.decodeImageFromList(bytes, (ui.Image img) {
+        completer.complete(Size(img.width.toDouble(), img.height.toDouble()));
+      });
+      final size = await completer.future;
+      if (mounted) {
+        setState(() {
+          _capturedImageSize = size;
+        });
+      }
+    } catch (_) {}
   }
 
   // Toggle Live Mode
   void _toggleLiveMode() {
     setState(() {
       _isLiveScanning = !_isLiveScanning;
+      if (!_isLiveScanning) {
+        _liveStatusMotivo = '';
+      } else {
+        _videoController?.pause();
+        _liveStatusMotivo = 'sin_vehiculo';
+        _liveDeteccion = null;
+      }
     });
 
     if (_isLiveScanning) {
-      // Iniciar temporizador cada 500 ms (2 fps) para captura y reconocimiento en tiempo real sin saturar
-      _liveScanTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      // Escaneo continuo en vivo (~1.4 fps cuando la red esté libre, protegido por _processing)
+      _liveScanTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
         if (!_processing && _cameraController != null && _cameraController!.value.isInitialized) {
           _capturarFrameLive();
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🟢 Modo Live Activo: Detectando vehículos automáticamente...'),
+          content: Text('Modo Live activo: dibujando detecciones y evitando cobros duplicados.'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -727,7 +995,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
       _liveScanTimer = null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⏹ Modo Live Pausado'),
+          content: Text('Modo Live pausado'),
           duration: Duration(seconds: 1),
         ),
       );
@@ -739,11 +1007,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
     try {
       final XFile shot = await _cameraController!.takePicture();
       final bytes = await shot.readAsBytes();
-      if (mounted) {
-        setState(() {
-          _capturedImageBytes = bytes;
-        });
-      }
+      await _actualizarFallbackImageSize(bytes);
       await _enviarFrameAI(bytes, esLive: true);
     } catch (_) {}
   }
@@ -751,7 +1015,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
   // Subir o Sacar Foto
   Future<void> _capturarFoto(ImageSource source) async {
     if (_isLiveScanning) {
-      _toggleLiveMode(); // Pausar live si toma foto manual
+      _toggleLiveMode();
     }
     _videoController?.pause();
 
@@ -761,8 +1025,10 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
     final bytes = await photo.readAsBytes();
     setState(() {
       _capturedImageBytes = bytes;
+      _liveDeteccion = null;
+      _nuevoRegistroPlaca = null;
     });
-
+    await _actualizarFallbackImageSize(bytes);
     await _enviarFrameAI(bytes);
   }
 
@@ -788,6 +1054,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
     if (!mounted) return;
     setState(() {
       _isPlayingVideo = true;
+      _liveDeteccion = null;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -815,6 +1082,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
           _capturedImageBytes = bytes;
         });
       }
+      await _actualizarFallbackImageSize(bytes);
       await _enviarFrameAI(bytes);
     } catch (e) {
       if (mounted) {
@@ -843,15 +1111,31 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
         body: jsonEncode({
           'frame_base64': base64Image,
           'caseta_id': 1,
+          'modo_live': esLive,
+          'solo_preview': esLive && !_autoRegistrarLive,
+          'cooldown_segundos': 20,
         }),
       ).timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body);
-      if (response.statusCode == 201 && data['success'] == true) {
+      if ((response.statusCode == 201 || response.statusCode == 200) && data['success'] == true) {
+        final bool registrado = data['registrado'] == true;
+        final String motivo = (data['motivo'] ?? (registrado ? 'nuevo_registro' : '')).toString();
+        final dynamic det = data['deteccion'];
+        final Map<String, dynamic>? detMap = det is Map<String, dynamic> ? det : null;
+
         if (mounted) {
           setState(() {
-            _lastResult = data;
+            _liveStatusMotivo = motivo;
+            _liveDeteccion = (motivo == 'sin_vehiculo') ? null : detMap;
+            if (data['paso'] != null) {
+              _lastResult = data;
+            }
           });
+          if (registrado && data['paso'] is Map) {
+            final placa = (data['paso']['placa_normalizada'] ?? data['paso']['placa_leida'] ?? 'PLACA').toString();
+            _mostrarBannerNuevoRegistro(placa);
+          }
         }
       } else if (mounted && !esLive) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -875,6 +1159,93 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
     }
   }
 
+  Widget _buildLiveCameraPreview() {
+    final controller = _cameraController!;
+    final double sensorRatio = controller.value.aspectRatio > 0 ? controller.value.aspectRatio : (4 / 3);
+    final bool isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final double previewRatio = isLandscape ? sensorRatio : (1.0 / sensorRatio);
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: 360,
+        height: 360 / previewRatio,
+        child: CameraPreview(controller),
+      ),
+    );
+  }
+
+  Widget _buildLiveStatusChip() {
+    if (_nuevoRegistroPlaca != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFF059669),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 6)],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 14),
+            const SizedBox(width: 6),
+            Text(
+              'NUEVO REGISTRO · $_nuevoRegistroPlaca',
+              style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.4),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_isLiveScanning) return const SizedBox.shrink();
+
+    String texto = 'ESCANEANDO CARRIL...';
+    Color bg = Colors.black.withValues(alpha: 0.72);
+    IconData icon = Icons.radar;
+
+    if (_liveStatusMotivo == 'solo_preview') {
+      texto = 'SOLO VISTA PREVIA (SIN GUARDAR)';
+      bg = const Color(0xFF334155).withValues(alpha: 0.9);
+      icon = Icons.visibility_outlined;
+    } else if (_liveStatusMotivo == 'duplicado_reciente') {
+      final p = (_liveDeteccion?['placa_normalizada'] ?? '').toString();
+      texto = p.isNotEmpty ? 'YA REGISTRADO · $p' : 'YA REGISTRADO (COOLDOWN)';
+      bg = const Color(0xFF1D4ED8).withValues(alpha: 0.9);
+      icon = Icons.verified_outlined;
+    } else if (_liveStatusMotivo == 'vehiculo_lejano') {
+      texto = 'VEHÍCULO LEJANO · ACERCAR A CASETA';
+      bg = const Color(0xFFEA580C).withValues(alpha: 0.9);
+      icon = Icons.zoom_in_outlined;
+    } else if (_liveStatusMotivo == 'esperando_placa') {
+      texto = 'VEHÍCULO DETECTADO · ENFOCANDO PLACA';
+      bg = const Color(0xFFD97706).withValues(alpha: 0.9);
+      icon = Icons.center_focus_weak;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 12),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              texto,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -882,15 +1253,17 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // VISOR PRINCIPAL (Cámara Live, Video o Imagen Capturada)
+          // VISOR PRINCIPAL (Cámara Live sin deformación, Video o Imagen + Puntos IA en Vivo)
           Container(
-            height: 250,
+            height: 320,
             decoration: BoxDecoration(
               color: Colors.black,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _isLiveScanning ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
-                width: _isLiveScanning ? 2.5 : 1,
+                color: _nuevoRegistroPlaca != null
+                    ? const Color(0xFF10B981)
+                    : (_isLiveScanning ? const Color(0xFF34D399) : const Color(0xFFE2E8F0)),
+                width: (_isLiveScanning || _nuevoRegistroPlaca != null) ? 2.5 : 1,
               ),
               boxShadow: [
                 BoxShadow(
@@ -907,7 +1280,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                 children: [
                   // 1. Si está en Modo Live y la cámara está lista
                   if (_isLiveScanning && _isCameraInitialized && _cameraController != null)
-                    CameraPreview(_cameraController!)
+                    _buildLiveCameraPreview()
                   // 2. Si hay video seleccionado
                   else if (_videoController != null && _videoController!.value.isInitialized)
                     GestureDetector(
@@ -951,11 +1324,23 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                       ],
                     ),
 
-                  // Overlay Badge en Modo Live
+                  // Capa de Overlay en Tiempo Real: cajas M1/M2/M4 + puntos de ruedas M3
+                  if (_isLiveScanning || _liveDeteccion != null)
+                    IgnorePointer(
+                      child: CustomPaint(
+                        painter: _DetectionOverlayPainter(
+                          deteccion: _liveDeteccion,
+                          fallbackImageSize: _capturedImageSize,
+                          isLiveScanning: _isLiveScanning,
+                        ),
+                      ),
+                    ),
+
+                  // Badge superior izquierdo en Modo Live
                   if (_isLiveScanning)
                     Positioned(
-                      top: 12,
-                      left: 12,
+                      top: 10,
+                      left: 10,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
@@ -966,10 +1351,10 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
-                            SizedBox(width: 6),
+                            Icon(Icons.fiber_manual_record, color: Colors.white, size: 11),
+                            SizedBox(width: 5),
                             Text(
-                              'EN VIVO • ESCANEANDO IA',
+                              'EN VIVO • IA',
                               style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                             ),
                           ],
@@ -977,11 +1362,23 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                       ),
                     ),
 
-                  // Overlay si está procesando
+                  // Etiqueta de Estado Live / NUEVO REGISTRO (abajo izquierda)
+                  if (_nuevoRegistroPlaca != null || _isLiveScanning)
+                    Positioned(
+                      bottom: 10,
+                      left: 10,
+                      right: _processing ? 130 : 10,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _buildLiveStatusChip(),
+                      ),
+                    ),
+
+                  // Indicador procesando (abajo derecha)
                   if (_processing)
                     Positioned(
-                      bottom: 12,
-                      right: 12,
+                      bottom: 10,
+                      right: 10,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
@@ -991,9 +1388,9 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-                            SizedBox(width: 8),
-                            Text('Analizando M1..M4...', style: TextStyle(color: Colors.white, fontSize: 10)),
+                            SizedBox(width: 11, height: 11, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                            SizedBox(width: 6),
+                            Text('M1..M4', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -1003,7 +1400,52 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
             ),
           ),
 
-          const SizedBox(height: 14),
+          // Leyenda compacta de puntos/cajas en vivo
+          if (_isLiveScanning || _liveDeteccion != null) ...[
+            const SizedBox(height: 8),
+            const Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              alignment: WrapAlignment.center,
+              children: [
+                _LegendDot(color: Color(0xFFF59E0B), label: 'M1 Placa'),
+                _LegendDot(color: Color(0xFF10B981), label: 'M2 Vehículo'),
+                _LegendDot(color: Color(0xFF22D3EE), label: 'M3 Ruedas/Ejes'),
+                _LegendDot(color: Color(0xFFA855F7), label: 'M4 Pasajeros'),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 10),
+
+          // Control para evitar cobros/registros accidentales al probar en la calle
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: const Color(0xFF059669),
+              title: const Text(
+                'Auto-registrar pasos en Live',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              ),
+              subtitle: Text(
+                _autoRegistrarLive
+                    ? 'Registra solo vehículos cercanos (>8% del cuadro) con placa clara y sin duplicar.'
+                    : 'Solo Vista Previa: muestra puntos y datos en vivo sin guardar ni cobrar.',
+                style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+              ),
+              value: _autoRegistrarLive,
+              onChanged: (val) => setState(() => _autoRegistrarLive = val),
+            ),
+          ),
+
+          const SizedBox(height: 10),
 
           // BOTONERA DE ACCIONES (Sacar Foto, Subir Foto, Video, Live)
           Row(
@@ -1095,17 +1537,93 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
             ),
           ],
 
-          // TARJETA DE RESULTADO DE DETECCIÓN IA
-          if (_lastResult != null) ...[
-            const SizedBox(height: 16),
-            _buildResultCard(_lastResult!['paso'], _lastResult!['latencia_ms']),
+          // TELEMETRÍA EN VIVO MIENTRAS ESCANEA (cuando aún no hay registro guardado o está enfocando placa)
+          if (_isLiveScanning && _liveDeteccion != null && _lastResult == null) ...[
+            const SizedBox(height: 14),
+            _buildLiveTelemetryCard(_liveDeteccion!),
+          ],
+
+          // TARJETA DE RESULTADO DE DETECCIÓN IA (Registro persistido / último paso)
+          if (_lastResult != null && _lastResult!['paso'] != null) ...[
+            const SizedBox(height: 14),
+            _buildResultCard(
+              _lastResult!['paso'] as Map<String, dynamic>,
+              _lastResult!['latencia_ms'],
+              esNuevoRegistro: _nuevoRegistroPlaca != null,
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildResultCard(Map<String, dynamic> paso, dynamic latencia) {
+  Widget _buildLiveTelemetryCard(Map<String, dynamic> det) {
+    final placa = (det['placa_normalizada'] ?? '').toString();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'DETECCIÓN EN VIVO (ENFOCANDO)',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Text(
+                  'En espera de placa legible',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            placa.isNotEmpty && placa != 'SINPLACA' ? placa : 'LEYENDO...',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInfoTile('Categoría (M2)', '${det['categoria'] ?? 'auto'}'.toUpperCase(), Icons.directions_car_outlined),
+              ),
+              Expanded(
+                child: _buildInfoTile('Ejes (M3)', '${det['ejes'] ?? 2} Ejes', Icons.adjust_outlined),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInfoTile('Pasajeros (M4)', '${det['pasajeros'] ?? 0} Pers.', Icons.people_outline),
+              ),
+              Expanded(
+                child: _buildInfoTile('Tarifa Est.', 'Bs. ${det['monto'] ?? '10.00'}', Icons.payments_outlined, isHighlight: true),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultCard(Map<String, dynamic> paso, dynamic latencia, {bool esNuevoRegistro = false}) {
     final bool esValido = paso['estado'] == 'Registrada y con paso';
     final int pasajeros = paso['pasajeros'] ?? 0;
 
@@ -1122,33 +1640,67 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          if (esNuevoRegistro)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF6EE7B7)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('PLACA RECONOCIDA (M1 + OCR)', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
+                  Icon(Icons.fiber_new, color: Color(0xFF059669), size: 16),
+                  SizedBox(width: 6),
                   Text(
-                    paso['placa_normalizada'] ?? 'DESCONOCIDA',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: 1.5, fontFamily: 'monospace'),
+                    'NUEVO REGISTRO EN CASETA',
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: esValido ? const Color(0xFFECFDF5) : const Color(0xFFFFF1F2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: esValido ? const Color(0xFF6EE7B7) : const Color(0xFFFDA4AF)),
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('PLACA RECONOCIDA (M1 + OCR)', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      paso['placa_normalizada'] ?? 'DESCONOCIDA',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: 1.2, fontFamily: 'monospace'),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  paso['estado'] ?? '',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: esValido ? const Color(0xFF065F46) : const Color(0xFF9F1239),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 155),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: esValido ? const Color(0xFFECFDF5) : const Color(0xFFFFF1F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: esValido ? const Color(0xFF6EE7B7) : const Color(0xFFFDA4AF)),
+                    ),
+                    child: Text(
+                      paso['estado'] ?? '',
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      softWrap: true,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                        color: esValido ? const Color(0xFF065F46) : const Color(0xFF9F1239),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1182,12 +1734,15 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
           if (latencia != null) ...[
             const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '• Caseta: ${paso['caseta']?['nombre'] ?? 'Principal 1'}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                Expanded(
+                  child: Text(
+                    '• Caseta: ${paso['caseta']?['nombre'] ?? 'Principal 1'}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '⚡ Latencia IA: ${latencia}ms',
                   style: const TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600),
@@ -1232,6 +1787,432 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569), fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// HISTORIAL DE PASOS GUARDADOS (CON FOTO, FILTROS, ELIMINACIÓN Y PAGINACIÓN)
+// -------------------------------------------------------------
+class HistorialPasosScreen extends StatefulWidget {
+  final String token;
+  final String baseUrl;
+  final bool esAdmin;
+  const HistorialPasosScreen({super.key, required this.token, required this.baseUrl, required this.esAdmin});
+
+  @override
+  State<HistorialPasosScreen> createState() => _HistorialPasosScreenState();
+}
+
+class _HistorialPasosScreenState extends State<HistorialPasosScreen> {
+  final List<Map<String, dynamic>> _pasos = [];
+  bool _cargando = false;
+  bool _cargandoMas = false;
+  int _paginaActual = 1;
+  int _ultimaPagina = 1;
+  int _total = 0;
+  String _filtroEstado = '';
+  String? _errorMsg;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPasos(reiniciar: true);
+  }
+
+  String? _resolverMediaUrl(dynamic raw) {
+    if (raw == null) return null;
+    final url = raw.toString().trim();
+    if (url.isEmpty) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    final parsed = Uri.tryParse(widget.baseUrl);
+    if (parsed == null || parsed.host.isEmpty) return url;
+    final path = url.startsWith('/') ? url : '/$url';
+    return '${parsed.scheme}://${parsed.authority}$path';
+  }
+
+  Future<void> _cargarPasos({bool reiniciar = false}) async {
+    if (reiniciar) {
+      setState(() {
+        _cargando = true;
+        _errorMsg = null;
+        _paginaActual = 1;
+      });
+    } else {
+      if (_cargandoMas || _paginaActual >= _ultimaPagina) return;
+      setState(() {
+        _cargandoMas = true;
+      });
+    }
+
+    final int targetPage = reiniciar ? 1 : (_paginaActual + 1);
+    final queryParams = <String, String>{'page': '$targetPage'};
+    if (_filtroEstado.isNotEmpty) {
+      queryParams['estado'] = _filtroEstado;
+    }
+
+    try {
+      final uri = Uri.parse('${widget.baseUrl}/pasos').replace(queryParameters: queryParams);
+      final resp = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body);
+        final List<dynamic> items = (json['data'] as List<dynamic>?) ?? [];
+        setState(() {
+          if (reiniciar) _pasos.clear();
+          _pasos.addAll(items.whereType<Map<String, dynamic>>());
+          _paginaActual = (json['current_page'] as num?)?.toInt() ?? targetPage;
+          _ultimaPagina = (json['last_page'] as num?)?.toInt() ?? 1;
+          _total = (json['total'] as num?)?.toInt() ?? _pasos.length;
+        });
+      } else {
+        setState(() {
+          _errorMsg = 'Error HTTP ${resp.statusCode} al cargar historial.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMsg = 'No se pudo conectar para cargar el historial: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _cargandoMas = false;
+        });
+      }
+    }
+  }
+
+  String _formatFecha(dynamic raw) {
+    if (raw == null) return '';
+    final dt = DateTime.tryParse(raw.toString())?.toLocal();
+    if (dt == null) return raw.toString();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} ${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+  }
+
+  Future<void> _confirmarEliminarPaso(Map<String, dynamic> paso) async {
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('¿Eliminar ${paso['placa_normalizada'] ?? 'registro'}?', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Se eliminará este registro erróneo del sistema (si se cobró a un vehículo registrado, se reembolsará su saldo).',
+          style: TextStyle(fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      final resp = await http.delete(
+        Uri.parse('${widget.baseUrl}/pasos/${paso['id']}'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+      ).timeout(const Duration(seconds: 12));
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registro eliminado correctamente'), duration: Duration(seconds: 2)),
+        );
+        await _cargarPasos(reiniciar: true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo eliminar (HTTP ${resp.statusCode})')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al eliminar: $e')));
+      }
+    }
+  }
+
+  void _abrirFotoZoom(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4.0,
+              child: Center(
+                child: Image.network(url, fit: BoxFit.contain),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Barra superior de filtros y total
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$_total registro(s) guardados',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF475569)),
+                    tooltip: 'Actualizar historial',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _cargando ? null : () => _cargarPasos(reiniciar: true),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final filtro in const [
+                      ('Todos', ''),
+                      ('Registrada y con paso', 'Registrada y con paso'),
+                      ('No registrada', 'Identificada no registrada'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(filtro.$1, style: const TextStyle(fontSize: 11)),
+                          selected: _filtroEstado == filtro.$2,
+                          onSelected: (_) {
+                            setState(() => _filtroEstado = filtro.$2);
+                            _cargarPasos(reiniciar: true);
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+        Expanded(
+          child: _cargando
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A)))
+              : RefreshIndicator(
+                  onRefresh: () => _cargarPasos(reiniciar: true),
+                  child: _errorMsg != null
+                      ? ListView(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(_errorMsg!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF9F1239), fontSize: 12)),
+                            ),
+                          ],
+                        )
+                      : _pasos.isEmpty
+                          ? ListView(
+                              children: const [
+                                Padding(
+                                  padding: EdgeInsets.all(36),
+                                  child: Text('No hay pasos registrados con este filtro.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _pasos.length + (_paginaActual < _ultimaPagina ? 1 : 0),
+                              itemBuilder: (context, idx) {
+                                if (idx == _pasos.length) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: OutlinedButton(
+                                      onPressed: _cargandoMas ? null : () => _cargarPasos(reiniciar: false),
+                                      child: Text(_cargandoMas ? 'Cargando...' : 'Cargar más registros'),
+                                    ),
+                                  );
+                                }
+
+                                final p = _pasos[idx];
+                                final bool esValido = p['estado'] == 'Registrada y con paso';
+                                final String? imgUrl = _resolverMediaUrl(p['imagen_url']);
+                                final double conf = double.tryParse('${p['confianza_ocr'] ?? 0}') ?? 0;
+                                final int pasajeros = (p['pasajeros'] as num?)?.toInt() ?? 0;
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      GestureDetector(
+                                        onTap: imgUrl != null ? () => _abrirFotoZoom(imgUrl) : null,
+                                        child: Container(
+                                          width: 68,
+                                          height: 68,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                          ),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: imgUrl != null
+                                              ? Image.network(
+                                                  imgUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined, size: 22, color: Color(0xFF94A3B8)),
+                                                )
+                                              : const Icon(Icons.directions_car_outlined, size: 24, color: Color(0xFF94A3B8)),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    (p['placa_normalizada'] ?? p['placa_leida'] ?? 'SIN PLACA').toString(),
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: Color(0xFF0F172A)),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Flexible(
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: esValido ? const Color(0xFFECFDF5) : const Color(0xFFFFF1F2),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: esValido ? const Color(0xFF6EE7B7) : const Color(0xFFFDA4AF)),
+                                                    ),
+                                                    child: Text(
+                                                      (p['estado'] ?? '').toString(),
+                                                      maxLines: 2,
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: esValido ? const Color(0xFF065F46) : const Color(0xFF9F1239),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '${(p['categoria_detectada'] ?? 'auto').toString().toUpperCase()} · ${p['ejes_detectados'] ?? 2} ejes · $pasajeros pas. · OCR ${(conf * 100).toStringAsFixed(0)}%',
+                                              style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w500),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '${p['caseta']?['nombre'] ?? 'Caseta 1'} · ${_formatFecha(p['created_at'])}',
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'Bs. ${p['monto'] ?? '0.00'}',
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF059669)),
+                                                ),
+                                                if (widget.esAdmin) ...[
+                                                  const SizedBox(width: 6),
+                                                  InkWell(
+                                                    onTap: () => _confirmarEliminarPaso(p),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    child: const Padding(
+                                                      padding: EdgeInsets.all(4.0),
+                                                      child: Icon(Icons.delete_outline, size: 17, color: Color(0xFFE11D48)),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+        ),
+      ],
     );
   }
 }

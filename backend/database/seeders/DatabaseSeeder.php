@@ -42,22 +42,8 @@ class DatabaseSeeder extends Seeder
         $caseta1 = Caseta::firstOrCreate(['nombre' => 'Caseta Principal Norte'], ['ubicacion' => 'Autopista Km 15']);
         $caseta2 = Caseta::firstOrCreate(['nombre' => 'Caseta Sur - Vía Expresa'], ['ubicacion' => 'Autopista Km 42']);
 
-        // 3. Tarifas (categoria, ejes, monto)
-        $tarifasData = [
-            ['categoria' => 'moto', 'ejes' => 2, 'monto' => 5.00],
-            ['categoria' => 'auto', 'ejes' => 2, 'monto' => 10.00],
-            ['categoria' => 'minibus', 'ejes' => 2, 'monto' => 15.00],
-            ['categoria' => 'bus', 'ejes' => 2, 'monto' => 25.00],
-            ['categoria' => 'bus', 'ejes' => 3, 'monto' => 30.00],
-            ['categoria' => 'camion', 'ejes' => 2, 'monto' => 25.00],
-            ['categoria' => 'camion', 'ejes' => 3, 'monto' => 35.00],
-            ['categoria' => 'camion', 'ejes' => 4, 'monto' => 45.00],
-            ['categoria' => 'camion', 'ejes' => 5, 'monto' => 60.00],
-            ['categoria' => 'camion', 'ejes' => 6, 'monto' => 75.00],
-            ['categoria' => 'trailer', 'ejes' => 4, 'monto' => 55.00],
-            ['categoria' => 'trailer', 'ejes' => 5, 'monto' => 70.00],
-            ['categoria' => 'trailer', 'ejes' => 6, 'monto' => 85.00],
-        ];
+        // 3. Tarifas realistas (Vías Bolivia en Bs.: categoria, ejes, monto)
+        $tarifasData = \App\Http\Controllers\Api\CasetaController::tarifasPorDefecto();
 
         foreach ($tarifasData as $t) {
             Tarifa::updateOrCreate(
@@ -104,7 +90,7 @@ class DatabaseSeeder extends Seeder
                 'confianza_ocr' => 0.95,
                 'categoria_detectada' => 'auto',
                 'ejes_detectados' => 2,
-                'monto' => 10.00,
+                'monto' => 5.00,
                 'caseta_id' => $caseta1->id,
                 'usuario_id' => $userOp->id,
                 'imagen_url' => null,
@@ -121,7 +107,7 @@ class DatabaseSeeder extends Seeder
                 'confianza_ocr' => 0.88,
                 'categoria_detectada' => 'camion',
                 'ejes_detectados' => 3,
-                'monto' => 35.00,
+                'monto' => 18.00,
                 'caseta_id' => $caseta1->id,
                 'usuario_id' => $userOp->id,
                 'imagen_url' => null,

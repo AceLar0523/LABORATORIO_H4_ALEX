@@ -1,11 +1,21 @@
 <template>
   <div class="space-y-5">
-    <div class="pb-2 border-b border-slate-200">
-      <h1 class="text-xl font-bold text-slate-900 tracking-tight">Historial de Tránsito en Caseta</h1>
-      <p class="text-xs text-slate-500 mt-0.5">Auditoría con fotografía de evidencia, caseta, fecha y tarifa aplicada</p>
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Historial de Tránsito en Caseta</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Auditoría con fotografía de evidencia, caseta, fecha y tarifa aplicada</p>
+      </div>
+      <button
+        v-if="esAdmin"
+        @click="confirmarLimpiarSinPlaca"
+        class="bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        <span>Limpiar SINPLACA</span>
+      </button>
     </div>
 
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+    <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-xs">
       <table class="w-full text-left text-xs text-slate-600">
         <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
           <tr>
@@ -16,6 +26,7 @@
             <th class="py-3 px-4 font-medium">Monto</th>
             <th class="py-3 px-4 font-medium">Estado</th>
             <th class="py-3 px-4 font-medium">Fecha y Hora</th>
+            <th v-if="esAdmin" class="py-3 px-4 font-medium text-right">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -42,6 +53,19 @@
               </span>
             </td>
             <td class="py-2.5 px-4 text-slate-400">{{ formatFecha(p.created_at) }}</td>
+            <td v-if="esAdmin" class="py-2.5 px-4 text-right">
+              <button
+                @click="confirmarEliminarPaso(p)"
+                class="text-rose-600 hover:text-rose-800 font-semibold text-xs cursor-pointer hover:underline"
+              >
+                Eliminar
+              </button>
+            </td>
+          </tr>
+          <tr v-if="pasos.length === 0">
+            <td :colspan="esAdmin ? 8 : 7" class="text-center py-10 text-slate-400 text-xs">
+              No hay pasos registrados.
+            </td>
           </tr>
         </tbody>
       </table>
@@ -58,13 +82,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { toast } from 'vue-sonner'
+import { useIosDialog } from '../services/useIosDialog'
 import api, { resolveMediaUrl } from '../services/api'
 
 const pasos = ref([])
 const paginaActual = ref(1)
 const ultimaPagina = ref(1)
 const totalRegistros = ref(0)
+const iosDialog = useIosDialog()
+
+const esAdmin = computed(() => {
+  try {
+    return JSON.parse(localStorage.getItem('peaje_user') || 'null')?.rol === 'administrador'
+  } catch {
+    return false
+  }
+})
 
 function getEstadoBadge(estado) {
   switch (estado) {
@@ -92,6 +127,40 @@ async function cargarPasos(page = 1) {
   } catch (err) {
     console.error(err)
   }
+}
+
+function confirmarEliminarPaso(p) {
+  iosDialog.confirmar({
+    title: `¿Eliminar paso ${p.placa_normalizada || p.placa_leida}?`,
+    message: `Se eliminará este registro (Bs. ${parseFloat(p.monto).toFixed(2)}) y sus alertas asociadas. Si fue cobrado a un vehículo registrado, se reembolsará su saldo.`,
+    confirmLabel: 'Eliminar',
+    onConfirm: async () => {
+      try {
+        await api.delete(`/pasos/${p.id}`)
+        toast.success('Registro eliminado correctamente')
+        await cargarPasos(paginaActual.value)
+      } catch (err) {
+        toast.error('No se pudo eliminar el registro', { description: err.response?.data?.message || err.message })
+      }
+    },
+  })
+}
+
+function confirmarLimpiarSinPlaca() {
+  iosDialog.confirmar({
+    title: '¿Limpiar todos los registros SINPLACA?',
+    message: 'Se eliminarán todos los falsos registros sin placa legible (SINPLACA / ilegibles) y sus alertas.',
+    confirmLabel: 'Limpiar',
+    onConfirm: async () => {
+      try {
+        const res = await api.delete('/pasos/limpiar/sin-placa')
+        toast.success(res.data?.message || 'Registros sin placa eliminados')
+        await cargarPasos(1)
+      } catch (err) {
+        toast.error('No se pudo limpiar registros', { description: err.response?.data?.message || err.message })
+      }
+    },
+  })
 }
 
 onMounted(() => cargarPasos(1))
