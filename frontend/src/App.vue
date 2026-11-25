@@ -50,6 +50,13 @@
               Alertas
             </router-link>
             <router-link
+              to="/usuarios"
+              class="px-3 py-1.5 rounded-lg transition-all text-xs font-semibold"
+              :class="$route.path === '/usuarios' ? 'bg-blue-50 text-blue-700 shadow-2xs border border-blue-200/60' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'"
+            >
+              Usuarios & OAuth
+            </router-link>
+            <router-link
               to="/estado"
               class="px-3 py-1.5 rounded-lg transition-all text-xs font-semibold"
               :class="$route.path === '/estado' ? 'bg-blue-50 text-blue-700 shadow-2xs border border-blue-200/60' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'"
@@ -79,6 +86,16 @@
           </button>
         </div>
       </div>
+
+      <!-- Navegación compacta móvil -->
+      <nav class="md:hidden border-t border-slate-100 px-3 py-2 flex items-center gap-1.5 overflow-x-auto bg-white">
+        <router-link to="/" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">Panel</router-link>
+        <router-link to="/vehiculos" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/vehiculos' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">Vehículos</router-link>
+        <router-link to="/pasos" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/pasos' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">Pasos</router-link>
+        <router-link to="/alertas" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/alertas' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">Alertas</router-link>
+        <router-link to="/usuarios" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/usuarios' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">Usuarios</router-link>
+        <router-link to="/estado" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap" :class="$route.path === '/estado' ? 'bg-blue-50 text-blue-700' : 'text-slate-600'">RunPod</router-link>
+      </nav>
     </header>
 
     <!-- Main Container con transición de rutas -->

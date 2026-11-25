@@ -60,84 +60,46 @@ class PasoController extends Controller
         }
 
         $filename = 'evidencia_' . time() . '_' . Str::random(6) . '.' . $imageExtension;
-        $tempPath = storage_path('app/public/evidencias/' . $filename);
-        if (!file_exists(dirname($tempPath))) {
-            mkdir(dirname($tempPath), 0777, true);
-        }
-        file_put_contents($tempPath, $imageData);
+        Storage::disk('public')->put('evidencias/' . $filename, $imageData);
         $imagenUrl = '/storage/evidencias/' . $filename;
 
-        $placaDetectada = $request->input('mock_placa', null);
+        $placaDetectada = 'SIN_PLACA';
         $confianzaOcr = 0.00;
         $categoria = 'auto';
         $ejes = 2;
-        $pasajeros = intval($request->input('pasajeros', 0));
+        $pasajeros = 0;
         $latenciaMs = 0.00;
 
-        // 1. Intentar llamar al servicio de inferencia FastAPI (M1 + M2 + M3 + M4 en RunPod o local)
+        // Llamar exclusivamente al motor de inferencia real en RunPod (M1 + M2 + M3 + M4)
         $aiResolved = false;
         try {
-            $response = Http::timeout(15)
+            $response = Http::timeout(20)
                 ->attach('file', $imageData, $filename)
                 ->post($inferenceUrl . '/predict');
 
             if ($response->successful()) {
                 $aiData = $response->json();
-                $placaDetectada = $aiData['placa'] ?? $placaDetectada;
-                $confianzaOcr = floatval($aiData['confianza'] ?? 0.00);
-                $categoria = strtolower($aiData['categoria'] ?? 'auto');
-                $ejes = intval($aiData['ejes'] ?? 2);
-                $pasajeros = intval($aiData['pasajeros'] ?? $pasajeros);
-                $latenciaMs = floatval($aiData['latencia_ms'] ?? 0.00);
-                $aiResolved = true;
+                if (is_array($aiData)) {
+                    $placaRaw = trim((string)($aiData['placa'] ?? ''));
+                    $placaDetectada = $placaRaw !== '' ? $placaRaw : 'SIN_PLACA';
+                    $confianzaOcr = floatval($aiData['confianza'] ?? 0.00);
+                    $categoria = strtolower((string)($aiData['categoria'] ?? 'auto'));
+                    $ejes = intval($aiData['ejes'] ?? 2);
+                    $pasajeros = intval($aiData['pasajeros'] ?? 0);
+                    $latenciaMs = floatval($aiData['latencia_ms'] ?? 0.00);
+                    $aiResolved = true;
+                }
             }
         } catch (\Exception $e) {
-            // FastAPI no respondió en HTTP
+            \Log::warning('Error conectando con RunPod en PasoController: ' . $e->getMessage());
         }
 
-        // 2. Si FastAPI no estaba activo, ejecutar directamente el pipeline local de Python
         if (!$aiResolved) {
-            try {
-                $pyScript = base_path('../inferencia/probar_pesos.py');
-                $pyVenv = base_path('../inferencia/.venv/bin/python');
-                if (file_exists($pyScript) && file_exists($pyVenv)) {
-                    $cmd = escapeshellarg($pyVenv) . ' ' . escapeshellarg($pyScript)
-                        . ' --image ' . escapeshellarg($tempPath) . ' --json 2>/dev/null';
-                    $output = shell_exec($cmd);
-                    if ($output) {
-                        $json = json_decode($output, true);
-                        $item = (is_array($json) && isset($json[0]) && is_array($json[0])) ? $json[0] : $json;
-                        if (is_array($item)) {
-                            if (isset($item['placa']) && $item['placa'] !== 'SIN_PLACA') {
-                                $placaDetectada = $item['placa'];
-                                $confianzaOcr = floatval($item['confianza'] ?? 0.85);
-                                $categoria = strtolower($item['categoria'] ?? 'auto');
-                                $ejes = intval($item['ejes'] ?? 2);
-                                $pasajeros = intval($item['pasajeros'] ?? 0);
-                                $latenciaMs = floatval($item['latencia_ms'] ?? 0.00);
-                                $aiResolved = true;
-                            } elseif (isset($item['vehiculos']) && count($item['vehiculos']) > 0) {
-                                $v0 = $item['vehiculos'][0];
-                                $placaDetectada = $v0['placa'] ?? $placaDetectada;
-                                $confianzaOcr = floatval($v0['confianza_ocr'] ?? 0.85);
-                                $categoria = strtolower($v0['categoria'] ?? 'auto');
-                                $ejes = intval($v0['ejes'] ?? 2);
-                                $pasajeros = intval($v0['pasajeros'] ?? 0);
-                                $latenciaMs = floatval($item['latencia_ms'] ?? 0.00);
-                                $aiResolved = true;
-                            }
-                        }
-                    }
-                }
-            } catch (\Exception $ex) {
-                // fallback
-            }
-        }
-
-        // Fallback si no hubo detección
-        if (empty($placaDetectada)) {
-            $placaDetectada = '4021XYZ';
-            $confianzaOcr = 0.95;
+            return response()->json([
+                'success' => false,
+                'message' => 'El motor de inferencia en RunPod no respondió. Verifica que el Pod esté en línea y con el puerto 8000 expuesto.',
+                'inference_url' => $inferenceUrl,
+            ], 503);
         }
 
         $placaNormalizada = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $placaDetectada));

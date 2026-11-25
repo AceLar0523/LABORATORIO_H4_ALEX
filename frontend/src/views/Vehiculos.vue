@@ -3,7 +3,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
       <div>
         <h1 class="text-xl font-bold text-slate-900 tracking-tight">Padrón de Vehículos Registrados</h1>
-        <p class="text-xs text-slate-500 mt-0.5">Gestión de placas, propietarios, categorías y saldos prepago en Supabase</p>
+        <p class="text-xs text-slate-500 mt-0.5">Gestión de placas, propietarios, categorías y saldos prepago</p>
       </div>
       <button
         @click="abrirModalCrear"
@@ -180,7 +180,7 @@ async function guardar() {
     if (form.value.id) {
       await api.put(`/vehiculos/${form.value.id}`, form.value)
       toast.success(`Vehículo ${form.value.placa} actualizado`, {
-        description: 'Sincronizado en SQLite con éxito',
+        description: 'Cambios guardados correctamente',
       })
     } else {
       await api.post('/vehiculos', form.value)

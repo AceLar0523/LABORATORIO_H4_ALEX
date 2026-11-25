@@ -101,14 +101,11 @@
             </span>
           </div>
 
-          <!-- M4: Pasajeros (Bonus Rúbrica +5 pts) -->
+          <!-- M4: Pasajeros -->
           <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
             <div>
-              <div class="flex items-center gap-1.5">
-                <span class="text-slate-800 font-semibold block">M4: Segmentación de Pasajeros (YOLO-seg)</span>
-                <span class="bg-indigo-100 text-indigo-700 text-[9px] font-bold px-1.5 py-0.5 rounded">+5 PTS EXTRAS</span>
-              </div>
-              <span class="text-[10px] text-slate-400">m4_pasajeros_seg.pt (conteo personas sin recortes faciales)</span>
+              <span class="text-slate-800 font-semibold block">M4: Segmentación de Pasajeros (YOLO-seg)</span>
+              <span class="text-[10px] text-slate-400">m4_pasajeros_seg.pt (conteo de ocupantes por cabina)</span>
             </div>
             <span
               class="text-[10px] px-2.5 py-1 rounded-md font-bold"
@@ -121,48 +118,60 @@
           </div>
 
           <!-- Ollama LLM -->
-          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 gap-3">
             <div>
-              <span class="text-slate-800 font-semibold block">Ollama LLM (llama3.2:3b)</span>
-              <span class="text-[10px] text-slate-400">Puerto 11434 (Agente Conversacional)</span>
+              <span class="text-slate-800 font-semibold block">
+                Ollama LLM ({{ info.ollama_models?.length ? info.ollama_models.join(', ') : 'llama3.2:3b' }})
+              </span>
+              <span
+                v-if="info.ollama_status === 'sin_modelo'"
+                class="text-[10px] text-amber-700 font-medium block mt-0.5"
+              >
+                Conectado a RunPod, sin modelo descargado — ejecuta: <code class="font-mono">ollama pull llama3.2:3b</code>
+              </span>
+              <span v-else class="text-[10px] text-slate-400">
+                Agente Conversacional (RunPod){{ info.detalles?.device ? ` • ${info.detalles.device}` : '' }}
+              </span>
             </div>
             <span
-              class="text-[10px] px-2.5 py-1 rounded-md font-bold"
+              class="text-[10px] px-2.5 py-1 rounded-md font-bold shrink-0"
               :class="info.ollama_status === 'online'
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-700 border border-rose-200'"
+                : info.ollama_status === 'sin_modelo'
+                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200'"
             >
-              {{ info.ollama_status === 'online' ? 'Operativo' : 'Inactivo' }}
+              {{ info.ollama_status === 'online' ? 'Operativo' : info.ollama_status === 'sin_modelo' ? 'Sin modelo' : 'Inactivo' }}
             </span>
           </div>
 
-          <!-- Base de datos SQLite -->
+          <!-- Base de datos -->
           <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
             <div>
               <span class="text-slate-800 font-semibold block">Base de Datos Relacional</span>
-              <span class="text-[10px] text-slate-400">SQLite Local (database/database.sqlite)</span>
+              <span class="text-[10px] text-slate-400">Padrón vehicular, pasos y lista blanca Google OAuth</span>
             </div>
             <span class="text-[10px] px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-              Conectado (21 vehículos)
+              Conectado ({{ info.vehiculos_registrados ?? 0 }} vehículos • {{ info.usuarios_autorizados ?? 0 }} usuarios OAuth)
             </span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Laboratorio de Pruebas: Subir y Probar Foto Directamente de tus Archivos -->
+    <!-- Análisis Manual de Vehículo por Fotografía -->
     <div class="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
-          <h3 class="text-sm font-bold text-slate-900 tracking-tight">Probar Inferencia con una Foto de tu Computadora</h3>
-          <p class="text-xs text-slate-500 mt-0.5">Escoge una foto de tus archivos locales para evaluar M1, M2, M3 y M4 en vivo</p>
+          <h3 class="text-sm font-bold text-slate-900 tracking-tight">Análisis Manual de Vehículo por Fotografía</h3>
+          <p class="text-xs text-slate-500 mt-0.5">Carga una imagen para ejecutar detección en RunPod (M1, M2, M3 y M4)</p>
         </div>
         <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs shrink-0">
           <input type="file" accept="image/*" class="hidden" @change="onFotoSeleccionada" />
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          <span>Subir y Escoger de Mis Archivos</span>
+          <span>Subir Fotografía</span>
         </label>
       </div>
 
@@ -200,7 +209,12 @@
         <div class="space-y-3 flex flex-col justify-center">
           <div v-if="analizando" class="py-12 text-center text-xs text-slate-500 flex flex-col items-center gap-2.5">
             <span class="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
-            <span class="font-semibold text-slate-700">Analizando frame con M1, M2, M3 y M4...</span>
+            <span class="font-semibold text-slate-700">Analizando frame en RunPod (M1, M2, M3 y M4)...</span>
+          </div>
+
+          <div v-else-if="errorFoto" class="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+            <strong class="block font-semibold mb-1">No se pudo completar la inferencia en RunPod</strong>
+            <span>{{ errorFoto }}</span>
           </div>
 
           <div v-else-if="resultadoFoto" class="space-y-2.5 text-xs">
@@ -253,12 +267,14 @@ const info = ref({
   latencia_ms: 0,
   modelos: null,
   ollama_status: 'offline',
+  ollama_models: [],
 })
 const verificando = ref(false)
 
 const fotoPreview = ref(null)
 const analizando = ref(false)
 const resultadoFoto = ref(null)
+const errorFoto = ref('')
 
 function onFotoSeleccionada(e) {
   const file = e.target.files[0]
@@ -275,11 +291,13 @@ function onFotoSeleccionada(e) {
 function quitarFoto() {
   fotoPreview.value = null
   resultadoFoto.value = null
+  errorFoto.value = ''
 }
 
 async function evaluarFoto(base64) {
   analizando.value = true
   resultadoFoto.value = null
+  errorFoto.value = ''
   try {
     const res = await api.post('/pasos/frame', {
       frame_base64: base64,
@@ -288,22 +306,14 @@ async function evaluarFoto(base64) {
     const p = res.data.paso
     resultadoFoto.value = {
       placa: p.placa_normalizada || p.placa_leida,
-      confianza: p.confianza_ocr || 0.95,
+      confianza: Number(p.confianza_ocr ?? 0),
       categoria: p.categoria_detectada || 'auto',
-      ejes: p.ejes_detectados || 2,
+      ejes: p.ejes_detectados ?? 2,
       pasajeros: p.pasajeros ?? 0,
-      latencia_ms: res.data.latencia_ms || 22.5,
+      latencia_ms: res.data.latencia_ms ?? 0,
     }
   } catch (err) {
-    // Si la API falla, mostrar respuesta estructurada
-    resultadoFoto.value = {
-      placa: '4021XYZ',
-      confianza: 0.95,
-      categoria: 'auto',
-      ejes: 2,
-      pasajeros: 1,
-      latencia_ms: 24.2,
-    }
+    errorFoto.value = err.response?.data?.message || 'Error conectando con el motor de inferencia en RunPod.'
   } finally {
     analizando.value = false
   }
@@ -317,15 +327,17 @@ async function verificar() {
   } catch (err) {
     info.value = {
       status: 'offline',
-      url: 'http://127.0.0.1:8000',
+      url: 'No configurado / Sin respuesta',
       latencia_ms: 0,
       modelos: {
         m1_detector: false,
         m1_ocr: false,
         m2_segmentation: false,
         m3_keypoints: false,
+        m4_passengers: false,
       },
       ollama_status: 'offline',
+      ollama_models: [],
     }
   } finally {
     verificando.value = false

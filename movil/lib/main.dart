@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:camera/camera.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:video_player/video_player.dart';
 
 List<CameraDescription> gAvailableCameras = [];
@@ -89,11 +90,10 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-    // Detección automática de IP según entorno de ejecución:
-    // - En Web: localhost (mismo navegador)
-    // - En Emulador Android Studio: 10.0.2.2 (alias hacia el localhost del PC)
-    // - En Celular Físico: IP de red Wi-Fi
-    if (kIsWeb) {
+    const String envApiUrl = String.fromEnvironment('API_BASE_URL');
+    if (envApiUrl.isNotEmpty) {
+      _baseUrl = envApiUrl;
+    } else if (kIsWeb) {
       _baseUrl = 'http://localhost:8000/api/v1';
     } else if (defaultTargetPlatform == TargetPlatform.android) {
       _baseUrl = 'http://10.0.2.2:8000/api/v1';
@@ -177,15 +177,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static bool _googleInitialized = false;
+
   late final TextEditingController _serverController;
-  final TextEditingController _emailController = TextEditingController(text: 'admin@peaje.com');
-  final TextEditingController _passwordController = TextEditingController(text: 'admin123');
   bool _loading = false;
   String? _errorMessage;
-  bool _modoCredenciales = false;
-  bool _probandoConexion = false;
-  String? _testConexionResult;
-  bool _testConexionOk = false;
 
   @override
   void initState() {
@@ -193,113 +189,164 @@ class _LoginScreenState extends State<LoginScreen> {
     _serverController = TextEditingController(text: widget.initialBaseUrl);
   }
 
-  Future<void> _probarConexion() async {
-    setState(() {
-      _probandoConexion = true;
-      _testConexionResult = null;
-      _testConexionOk = false;
-    });
-
-    try {
-      final base = _serverController.text.trim();
-      final url = Uri.parse('$base/ping');
-      final res = await http.get(url).timeout(const Duration(seconds: 4));
-
-      if (res.statusCode == 200) {
-        setState(() {
-          _testConexionOk = true;
-          _testConexionResult = '¡Conexión exitosa con el servidor! (HTTP 200)';
-        });
-      } else {
-        setState(() {
-          _testConexionOk = false;
-          _testConexionResult = 'Servidor respondió con código HTTP ${res.statusCode}';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _testConexionOk = false;
-        _testConexionResult = 'No se pudo conectar: verifica que el backend esté corriendo en el puerto 8000';
-      });
-    } finally {
-      setState(() {
-        _probandoConexion = false;
-      });
-    }
+  @override
+  void dispose() {
+    _serverController.dispose();
+    super.dispose();
   }
 
-  Future<void> _loginCredenciales() async {
+  String get _normalizedBaseUrl =>
+      _serverController.text.trim().replaceAll(RegExp(r'/+$'), '');
+
+  Future<void> _abrirConfigServidor() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Configurar Servidor', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'URL de la API del Backend (ej. https://subdominio.com/api/v1)',
+                style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _serverController,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final limpio = _normalizedBaseUrl;
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('peaje_base_url', limpio);
+                if (mounted) {
+                  setState(() {
+                    _serverController.text = limpio;
+                    _errorMessage = null;
+                  });
+                }
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop();
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _loginGoogleOAuth() async {
     setState(() {
       _loading = true;
       _errorMessage = null;
     });
 
+    final base = _normalizedBaseUrl;
+
     try {
-      final url = Uri.parse('${_serverController.text.trim()}/auth/login');
-      final resp = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: jsonEncode({
-          'email': _emailController.text.trim(),
-          'password': _passwordController.text.trim(),
-        }),
-      ).timeout(const Duration(seconds: 6));
+      final cfgResp = await http
+          .get(Uri.parse('$base/auth/config'), headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(resp.body);
-
-      if (resp.statusCode == 200 && data['success'] == true) {
-        widget.onLoginSuccess(data['token'], data['usuario'], _serverController.text.trim());
-      } else {
+      if (cfgResp.statusCode >= 400) {
         setState(() {
-          _errorMessage = data['message'] ?? 'Credenciales inválidas.';
+          _errorMessage = 'El servidor ($base) devolvió HTTP ${cfgResp.statusCode}. Verifica la URL en ⚙.';
         });
+        return;
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error conectando al servidor: $e';
-      });
-    } finally {
-      setState(() {
-        _loading = false;
-      });
-    }
-  }
 
-  Future<void> _loginGoogle(String email) async {
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-    });
+      final cfg = jsonDecode(cfgResp.body);
+      final String webClientId = (cfg['google_client_id'] ?? '').toString().trim();
+      final String androidClientId = (cfg['google_android_client_id'] ?? '').toString().trim();
+      final bool enabled = cfg['google_oauth_enabled'] == true &&
+          (webClientId.isNotEmpty || androidClientId.isNotEmpty);
 
-    try {
-      final url = Uri.parse('${_serverController.text.trim()}/auth/google');
+      if (!enabled) {
+        setState(() {
+          _errorMessage = 'Google OAuth no está habilitado en $base. Revisa GOOGLE_CLIENT_ID y GOOGLE_ANDROID_CLIENT_ID en backend/.env.';
+        });
+        return;
+      }
+
+      if (!_googleInitialized) {
+        await GoogleSignIn.instance.initialize(
+          clientId: kIsWeb
+              ? (webClientId.isNotEmpty ? webClientId : null)
+              : (androidClientId.isNotEmpty ? androidClientId : null),
+          serverClientId: (!kIsWeb && webClientId.isNotEmpty) ? webClientId : null,
+        );
+        _googleInitialized = true;
+      }
+
+      if (!GoogleSignIn.instance.supportsAuthenticate()) {
+        setState(() {
+          _errorMessage = 'En navegador Web abre el acceso Web principal en HTTPS para iniciar con Google OAuth 2.0.';
+        });
+        return;
+      }
+
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+
+      if (idToken == null || idToken.isEmpty) {
+        setState(() {
+          _errorMessage = 'Google no devolvió un ID Token válido.';
+        });
+        return;
+      }
+
       final resp = await http.post(
-        url,
+        Uri.parse('$base/auth/google'),
         headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'name': email.split('@')[0],
-          'id_token': 'mobile_google_token_$email',
-        }),
-      ).timeout(const Duration(seconds: 6));
+        body: jsonEncode({'id_token': idToken}),
+      ).timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(resp.body);
 
       if (resp.statusCode == 200 && data['success'] == true) {
-        widget.onLoginSuccess(data['token'], data['usuario'], _serverController.text.trim());
+        widget.onLoginSuccess(data['token'], data['usuario'], base);
       } else {
         setState(() {
           _errorMessage = data['message'] ?? 'Acceso denegado. Cuenta no autorizada.';
         });
       }
+    } on TimeoutException {
+      setState(() {
+        _errorMessage =
+            'Tiempo de espera agotado al conectar con $base/auth/config. '
+            'Toca el ícono ⚙ arriba a la derecha para verificar la URL del servidor '
+            '(en producción usa tu subdominio HTTPS; en pruebas locales inicia Laravel con --host=0.0.0.0).';
+      });
+    } on GoogleSignInException catch (e) {
+      setState(() {
+        _errorMessage = 'Inicio con Google cancelado o no disponible (${e.code.name}).';
+      });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error conectando al servidor: $e';
+        _errorMessage = 'Error conectando con Google OAuth / servidor ($base): $e';
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -351,7 +398,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo e Identidad
+                  // Logo, identidad y acceso discreto a configuración de servidor
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      icon: const Icon(Icons.settings_outlined, size: 18, color: Color(0xFF94A3B8)),
+                      tooltip: 'Configurar Servidor',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: _abrirConfigServidor,
+                    ),
+                  ),
                   Center(
                     child: Container(
                       width: 50,
@@ -376,107 +433,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Configuración de Servidor en Dev
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Servidor API (Dev)',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                            ),
-                            InkWell(
-                              onTap: _probandoConexion ? null : _probarConexion,
-                              child: Text(
-                                _probandoConexion ? 'Probando...' : 'Probar conexión',
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _serverController,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A), fontFamily: 'monospace'),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            fillColor: Colors.white,
-                            filled: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            ActionChip(
-                              avatar: const Icon(Icons.android, size: 14),
-                              label: const Text('Emulador (10.0.2.2)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                setState(() {
-                                  _serverController.text = 'http://10.0.2.2:8000/api/v1';
-                                });
-                                _probarConexion();
-                              },
-                            ),
-                            ActionChip(
-                              avatar: const Icon(Icons.language, size: 14),
-                              label: const Text('Web / Localhost', style: TextStyle(fontSize: 10)),
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                setState(() {
-                                  _serverController.text = 'http://localhost:8000/api/v1';
-                                });
-                                _probarConexion();
-                              },
-                            ),
-                            ActionChip(
-                              avatar: const Icon(Icons.wifi, size: 14),
-                              label: const Text('Wi-Fi Celular (192.168.1.207)', style: TextStyle(fontSize: 10)),
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                setState(() {
-                                  _serverController.text = 'http://192.168.1.207:8000/api/v1';
-                                });
-                                _probarConexion();
-                              },
-                            ),
-                          ],
-                        ),
-                        if (_testConexionResult != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            _testConexionResult!,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              color: _testConexionOk ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
                   if (_errorMessage != null)
                     Container(
                       margin: const EdgeInsets.only(bottom: 14),
@@ -492,161 +448,68 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                  // Selector de Pestañas: Google OAuth 2.0 (Principal) o Usuario & Contraseña
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
+                  // ACCESO EXCLUSIVO GOOGLE OAUTH 2.0 (Sin contraseña)
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    padding: const EdgeInsets.all(3),
+                    onPressed: _loading ? null : _loginGoogleOAuth,
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => setState(() => _modoCredenciales = false),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              decoration: BoxDecoration(
-                                color: !_modoCredenciales ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                                boxShadow: !_modoCredenciales ? const [BoxShadow(color: Color(0x0A000000), blurRadius: 4)] : null,
-                              ),
-                              child: Text(
-                                'Google OAuth 2.0',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: !_modoCredenciales ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                                  fontSize: 12,
-                                  fontWeight: !_modoCredenciales ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => setState(() => _modoCredenciales = true),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              decoration: BoxDecoration(
-                                color: _modoCredenciales ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                                boxShadow: _modoCredenciales ? const [BoxShadow(color: Color(0x0A000000), blurRadius: 4)] : null,
-                              ),
-                              child: Text(
-                                'Usuario & Clave',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _modoCredenciales ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                                  fontSize: 12,
-                                  fontWeight: _modoCredenciales ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              ),
-                            ),
+                        _buildGoogleIcon(),
+                        const SizedBox(width: 10),
+                        Text(
+                          _loading ? 'Autenticando...' : 'Continuar con Google',
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // CONTENIDO 1: GOOGLE OAUTH 2.0 (OPCIÓN PRINCIPAL)
-                  if (!_modoCredenciales) ...[
-                    // Botón Principal Estilo Google
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Colors.white,
-                        side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Acceso exclusivo con Google Sign-In para cuentas autorizadas en la lista blanca institucional.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _abrirConfigServidor,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      onPressed: _loading ? null : () => _loginGoogle('docente@peaje.edu'),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildGoogleIcon(),
-                          const SizedBox(width: 10),
-                          const Text(
-                            'Continuar con Google',
-                            style: TextStyle(
-                              color: Color(0xFF0F172A),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                          const Icon(Icons.dns_outlined, size: 13, color: Color(0xFF64748B)),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Servidor: $_normalizedBaseUrl',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF475569),
+                                fontSize: 10.5,
+                                fontFamily: 'monospace',
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-
-                    // Acceso directo Operador
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F172A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      onPressed: _loading ? null : () => _loginGoogle('operador@peaje.com'),
-                      child: Text(
-                        _loading ? 'Autenticando...' : 'Acceder como Operador de Caseta',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Botón de prueba de rechazo para el evaluador / docente
-                    TextButton(
-                      onPressed: _loading ? null : () => _loginGoogle('noautorizado@gmail.com'),
-                      child: const Text(
-                        'Probar rechazo de cuenta ajena (Demostración Lista Blanca)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, decoration: TextDecoration.underline),
-                      ),
-                    ),
-                  ] else ...[
-                    // CONTENIDO 2: CREDENCIALES DIRECTAS
-                    TextField(
-                      controller: _emailController,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
-                      decoration: InputDecoration(
-                        labelText: 'Correo Electrónico',
-                        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
-                      decoration: InputDecoration(
-                        labelText: 'Contraseña',
-                        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F172A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      onPressed: _loading ? null : _loginCredenciales,
-                      child: Text(
-                        _loading ? 'Autenticando...' : 'Iniciar Sesión',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -680,17 +543,44 @@ class MainHomeScreen extends StatefulWidget {
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
   int _currentIndex = 0;
+  late final List<Map<String, dynamic>> _chatMensajes = [
+    _crearMensajeBienvenida(),
+  ];
+
+  static Map<String, dynamic> _crearMensajeBienvenida() => {
+        'role': 'assistant',
+        'text':
+            'Soy el asistente exclusivo del **Sistema Inteligente de Control de Peaje**.\n'
+            'Puedes subir **1 o varias fotos de vehículos** (hasta 6) para analizar placa (M1), categoría (M2), ejes (M3), pasajeros (M4) y tarifa, o consultarme sobre placas, tarifas, alertas y recaudación.',
+        'imagenes': <Uint8List>[],
+        'fueraDominio': false,
+        'analisis': <dynamic>[],
+        'resumenLote': null,
+      };
+
+  void _reiniciarChatMensajes() {
+    setState(() {
+      _chatMensajes
+        ..clear()
+        ..add(_crearMensajeBienvenida());
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final screens = [
       ModoCasetaScreen(token: widget.token, baseUrl: widget.baseUrl),
-      ModoConsultaScreen(token: widget.token, baseUrl: widget.baseUrl),
+      ModoConsultaScreen(
+        token: widget.token,
+        baseUrl: widget.baseUrl,
+        mensajes: _chatMensajes,
+        onResetMensajes: _reiniciarChatMensajes,
+      ),
     ];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Caseta de Peaje' : 'Consulta Vehicular'),
+        title: Text(_currentIndex == 0 ? 'Caseta de Peaje' : 'Agente IA de Peaje'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout_outlined, size: 20),
@@ -713,9 +603,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             label: 'Modo Caseta',
           ),
           NavigationDestination(
-            icon: Icon(Icons.search_outlined, size: 20),
-            selectedIcon: Icon(Icons.search, size: 20, color: Color(0xFF0F172A)),
-            label: 'Modo Consulta',
+            icon: Icon(Icons.smart_toy_outlined, size: 20),
+            selectedIcon: Icon(Icons.smart_toy, size: 20, color: Color(0xFF0F172A)),
+            label: 'Agente IA',
           ),
         ],
       ),
@@ -902,7 +792,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
           'frame_base64': base64Image,
           'caseta_id': 1,
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body);
       if (response.statusCode == 201 && data['success'] == true) {
@@ -911,6 +801,12 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
             _lastResult = data;
           });
         }
+      } else if (mounted && !esLive) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data['message'] ?? 'No se pudo procesar en RunPod (HTTP ${response.statusCode})'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted && !esLive) {
@@ -1121,7 +1017,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
             ),
             onPressed: _seleccionarVideo,
             label: const Text(
-              'Cargar y Reproducir Video de Caseta (Demostración)',
+              'Cargar y Reproducir Video de Caseta',
               style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
             ),
           ),
@@ -1268,128 +1164,936 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
 }
 
 // -------------------------------------------------------------
-// MODO CONSULTA (AGENTE CONVERSACIONAL)
+// MODO CONSULTA (AGENTE CONVERSACIONAL EXCLUSIVO DE PEAJE)
 // -------------------------------------------------------------
 class ModoConsultaScreen extends StatefulWidget {
   final String token;
   final String baseUrl;
-  const ModoConsultaScreen({super.key, required this.token, required this.baseUrl});
+  final List<Map<String, dynamic>> mensajes;
+  final VoidCallback onResetMensajes;
+
+  const ModoConsultaScreen({
+    super.key,
+    required this.token,
+    required this.baseUrl,
+    required this.mensajes,
+    required this.onResetMensajes,
+  });
 
   @override
   State<ModoConsultaScreen> createState() => _ModoConsultaScreenState();
 }
 
 class _ModoConsultaScreenState extends State<ModoConsultaScreen> {
+  static const int _maxImagenes = 6;
   final TextEditingController _textController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
   bool _loading = false;
-  String? _agentResponse;
+  bool _verificandoEstado = false;
+  String _estadoVision = 'offline';
+  String _estadoOllama = 'offline';
+  final List<Uint8List> _imagenesPendientes = [];
 
-  Future<void> _consultar({String? texto, Uint8List? imagenBytes}) async {
-    setState(() {
-      _loading = true;
-      _agentResponse = null;
+  @override
+  void initState() {
+    super.initState();
+    _verificarConexion();
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollAbajo() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
     });
+  }
 
+  Future<void> _verificarConexion() async {
+    if (_verificandoEstado) return;
+    setState(() => _verificandoEstado = true);
     try {
-      final body = <String, dynamic>{};
-      if (texto != null && texto.isNotEmpty) {
-        body['mensaje'] = texto;
+      final resp = await http
+          .get(
+            Uri.parse('${widget.baseUrl}/estado/inferencia'),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer ${widget.token}',
+            },
+          )
+          .timeout(const Duration(seconds: 8));
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        if (data is Map<String, dynamic>) {
+          final modelos = data['modelos'];
+          final bool ollamaActivo = modelos is Map && modelos['ollama_llm'] == true;
+          setState(() {
+            _estadoVision = data['status'] == 'online' ? 'online' : 'offline';
+            _estadoOllama = (data['ollama_status'] ?? (ollamaActivo ? 'online' : 'offline')).toString();
+          });
+          return;
+        }
       }
-      if (imagenBytes != null) {
-        body['imagen_base64'] = 'data:image/jpeg;base64,${base64Encode(imagenBytes)}';
-      }
-
-      final resp = await http.post(
-        Uri.parse('${widget.baseUrl}/agente/chat'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer ${widget.token}',
-        },
-        body: jsonEncode(body),
-      );
-
-      final data = jsonDecode(resp.body);
       setState(() {
-        _agentResponse = data['respuesta'];
+        _estadoVision = 'offline';
+        _estadoOllama = 'offline';
       });
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
-        _agentResponse = 'No se pudo conectar con el agente: $e';
+        _estadoVision = 'offline';
+        _estadoOllama = 'offline';
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() => _verificandoEstado = false);
+      }
     }
   }
 
-  Future<void> _subirFotoPlaca() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
+  void _reiniciarChat() {
+    widget.onResetMensajes();
+    setState(() {
+      _imagenesPendientes.clear();
+      _textController.clear();
+    });
+    _scrollAbajo();
+  }
+
+  Future<void> _consultar({String? textoOverride}) async {
+    final texto = (textoOverride ?? _textController.text).trim();
+    final imagenes = List<Uint8List>.from(_imagenesPendientes);
+
+    if (texto.isEmpty && imagenes.isEmpty) return;
+
+    final historial = widget.mensajes
+        .reversed
+        .take(12)
+        .toList()
+        .reversed
+        .map((m) => {'role': m['role'], 'content': m['text']})
+        .toList();
+
+    setState(() {
+      _loading = true;
+      widget.mensajes.add({
+        'role': 'user',
+        'text': texto.isNotEmpty
+            ? texto
+            : 'Analizar ${imagenes.length} imagen(es) vehicular(es)',
+        'imagenes': imagenes,
+        'fueraDominio': false,
+        'analisis': <dynamic>[],
+        'resumenLote': null,
+      });
+      if (textoOverride == null) {
+        _textController.clear();
+      }
+      _imagenesPendientes.clear();
+    });
+    _scrollAbajo();
+
+    try {
+      final body = <String, dynamic>{'historial': historial};
+      if (texto.isNotEmpty) {
+        body['mensaje'] = texto;
+      }
+      if (imagenes.isNotEmpty) {
+        final listaB64 = imagenes
+            .map((bytes) => 'data:image/jpeg;base64,${base64Encode(bytes)}')
+            .toList();
+        body['imagenes_base64'] = listaB64;
+        if (listaB64.length == 1) {
+          body['imagen_base64'] = listaB64.first;
+        }
+      }
+
+      final resp = await http
+          .post(
+            Uri.parse('${widget.baseUrl}/agente/chat'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer ${widget.token}',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 45));
+
+      dynamic data;
+      try {
+        data = jsonDecode(resp.body);
+      } catch (_) {
+        data = null;
+      }
+
+      if (!mounted) return;
+      if (resp.statusCode >= 400) {
+        final msgErr = (data is Map ? (data['respuesta'] ?? data['message']) : null) ??
+            'Error HTTP ${resp.statusCode} al consultar el agente.';
+        setState(() {
+          widget.mensajes.add({
+            'role': 'assistant',
+            'text': msgErr.toString(),
+            'imagenes': <Uint8List>[],
+            'fueraDominio': false,
+            'analisis': <dynamic>[],
+            'resumenLote': null,
+          });
+        });
+        return;
+      }
+
+      final mapData = data is Map<String, dynamic> ? data : <String, dynamic>{};
+      setState(() {
+        widget.mensajes.add({
+          'role': 'assistant',
+          'text': (mapData['respuesta'] ?? 'Sin respuesta del agente.').toString(),
+          'imagenes': <Uint8List>[],
+          'fueraDominio': mapData['estado'] == 'Fuera de dominio',
+          'analisis': (mapData['analisis_imagenes'] as List<dynamic>?) ?? <dynamic>[],
+          'resumenLote': mapData['resumen_lote'],
+        });
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        widget.mensajes.add({
+          'role': 'assistant',
+          'text': 'No se pudo conectar con el agente: $e',
+          'imagenes': <Uint8List>[],
+          'fueraDominio': false,
+          'analisis': <dynamic>[],
+          'resumenLote': null,
+        });
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+        _scrollAbajo();
+      }
+    }
+  }
+
+  void _mostrarAvisoLimite() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Máximo 6 imágenes por consulta.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _seleccionarVariasImagenes() async {
+    final List<XFile> photos = await _picker.pickMultiImage();
+    if (photos.isEmpty) return;
+
+    final disponibles = _maxImagenes - _imagenesPendientes.length;
+    if (disponibles <= 0) {
+      _mostrarAvisoLimite();
+      return;
+    }
+
+    if (photos.length > disponibles) {
+      _mostrarAvisoLimite();
+    }
+
+    final lote = photos.take(disponibles);
+    final nuevas = <Uint8List>[];
+    for (final photo in lote) {
+      nuevas.add(await photo.readAsBytes());
+    }
+    if (!mounted) return;
+    setState(() {
+      _imagenesPendientes.addAll(nuevas);
+    });
+  }
+
+  Future<void> _tomarFotoPlaca() async {
+    if (_imagenesPendientes.length >= _maxImagenes) {
+      _mostrarAvisoLimite();
+      return;
+    }
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
     if (photo == null) return;
     final bytes = await photo.readAsBytes();
-    _consultar(imagenBytes: bytes);
+    if (!mounted) return;
+    setState(() {
+      _imagenesPendientes.add(bytes);
+    });
+  }
+
+  void _abrirZoomImagen(Uint8List bytes) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4.0,
+              child: Center(child: Image.memory(bytes, fit: BoxFit.contain)),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<InlineSpan> _parseFormattedSpans(String text, {required bool isUser}) {
+    final baseColor = isUser ? Colors.white : const Color(0xFF334155);
+    final codeBg = isUser ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+    final codeFg = isUser ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A);
+    final baseStyle = TextStyle(fontSize: 13, height: 1.45, color: baseColor);
+
+    final pattern = RegExp(r'\*\*(.+?)\*\*|`([^`]+)`|\*([^*\n]+)\*');
+    final spans = <InlineSpan>[];
+    int cursor = 0;
+
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start), style: baseStyle));
+      }
+      if (match.group(1) != null) {
+        spans.add(
+          TextSpan(
+            text: match.group(1),
+            style: baseStyle.copyWith(fontWeight: FontWeight.w700),
+          ),
+        );
+      } else if (match.group(2) != null) {
+        spans.add(
+          TextSpan(
+            text: ' ${match.group(2)} ',
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              height: 1.45,
+              color: codeFg,
+              backgroundColor: codeBg,
+            ),
+          ),
+        );
+      } else if (match.group(3) != null) {
+        spans.add(
+          TextSpan(
+            text: match.group(3),
+            style: baseStyle.copyWith(fontStyle: FontStyle.italic),
+          ),
+        );
+      }
+      cursor = match.end;
+    }
+
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor), style: baseStyle));
+    }
+    return spans;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          Row(
+    final mensajes = widget.mensajes;
+    final totalItems = mensajes.length + (_loading ? 1 : 0);
+
+    return Column(
+      children: [
+        // Cabecera compacta de estado en vivo
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0F172A),
+          ),
+          child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _textController,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
-                  decoration: InputDecoration(
-                    hintText: 'Ingresa placa (ej. 4021XYZ)',
-                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Agente Exclusivo de Peaje',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _estadoVision == 'online'
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFFFB7185),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Visión M1–M4: ${_estadoVision == 'online' ? 'En línea' : 'Offline'}',
+                              style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _estadoOllama == 'online'
+                                    ? const Color(0xFF34D399)
+                                    : (_estadoOllama == 'sin_modelo'
+                                        ? const Color(0xFFFBBF24)
+                                        : const Color(0xFFFB7185)),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'LLM: ${_estadoOllama == 'online' ? 'Activo' : (_estadoOllama == 'sin_modelo' ? 'Sin modelo' : 'Offline')}',
+                              style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
               IconButton(
-                style: IconButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                icon: const Icon(Icons.send, size: 16),
-                onPressed: _loading ? null : () => _consultar(texto: _textController.text),
+                tooltip: 'Verificar estado RunPod y Ollama',
+                onPressed: _verificandoEstado ? null : _verificarConexion,
+                icon: Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: _verificandoEstado ? const Color(0xFF64748B) : Colors.white,
+                ),
               ),
-              IconButton(
-                style: IconButton.styleFrom(side: const BorderSide(color: Color(0xFFCBD5E1))),
-                icon: const Icon(Icons.camera_alt_outlined, size: 18, color: Color(0xFF0F172A)),
-                onPressed: _loading ? null : _subirFotoPlaca,
+              TextButton(
+                onPressed: _loading ? null : _reiniciarChat,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFCBD5E1),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  minimumSize: Size.zero,
+                ),
+                child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          if (_loading) const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A))),
-          if (_agentResponse != null)
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+
+        if (_estadoOllama == 'sin_modelo')
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFFBEB),
+              border: Border(bottom: BorderSide(color: Color(0xFFFDE68A))),
+            ),
+            child: const Text(
+              'Visión M1–M4 y consultas a BD activas en RunPod. Ollama espera modelo (llama3.2:3b) para redacción libre.',
+              style: TextStyle(color: Color(0xFF92400E), fontSize: 11),
+            ),
+          ),
+
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final chip in const [
+                        ('Tarifas', '¿Cuáles son las tarifas vigentes por categoría y ejes?'),
+                        ('Resumen de hoy', 'Dame el resumen de pasos, recaudación y vehículos registrados'),
+                        ('Alertas activas', '¿Cuántas alertas pendientes hay y cuáles son?'),
+                        ('Modelos M1–M4', 'Explícame cómo funcionan los modelos M1, M2, M3 y M4 en el peaje'),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ActionChip(
+                            label: Text(chip.$1, style: const TextStyle(fontSize: 11)),
+                            onPressed: _loading ? null : () => _consultar(textoOverride: chip.$2),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                child: SingleChildScrollView(
-                  child: Text(
-                    _agentResponse!,
-                    style: const TextStyle(fontSize: 13, height: 1.5, color: Color(0xFF334155)),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    itemCount: totalItems,
+                    itemBuilder: (context, index) {
+                      if (_loading && index == mensajes.length) {
+                        return TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: 1),
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, value, child) => Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, 8 * (1 - value)),
+                              child: child,
+                            ),
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _TypingDotsIndicator(),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Analizando en RunPod y consultando peaje...',
+                                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final msg = mensajes[index];
+                      final isUser = msg['role'] == 'user';
+                      final fueraDominio = msg['fueraDominio'] == true;
+                      final imgs = (msg['imagenes'] as List<Uint8List>?) ?? <Uint8List>[];
+                      final analisis = (msg['analisis'] as List<dynamic>?) ?? <dynamic>[];
+                      final resumenLote = msg['resumenLote'];
+
+                      return TweenAnimationBuilder<double>(
+                        key: ValueKey('msg_$index'),
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) => Opacity(
+                          opacity: value,
+                          child: Transform.translate(
+                            offset: Offset(0, 10 * (1 - value)),
+                            child: child,
+                          ),
+                        ),
+                        child: Align(
+                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.85,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isUser
+                                ? const Color(0xFF0F172A)
+                                : (fueraDominio ? const Color(0xFFFFFBEB) : Colors.white),
+                            borderRadius: BorderRadius.circular(12),
+                            border: isUser
+                                ? null
+                                : Border.all(
+                                    color: fueraDominio
+                                        ? const Color(0xFFFDE68A)
+                                        : const Color(0xFFE2E8F0),
+                                  ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (!isUser && fueraDominio)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Fuera de dominio',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF92400E),
+                                    ),
+                                  ),
+                                ),
+                              if (imgs.isNotEmpty) ...[
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: imgs
+                                      .map(
+                                        (b) => GestureDetector(
+                                          onTap: () => _abrirZoomImagen(b),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Image.memory(
+                                              b,
+                                              width: 68,
+                                              height: 68,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              if (!isUser && analisis.isNotEmpty) ...[
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: analisis.whereType<Map<String, dynamic>>().map((item) {
+                                    if (item['exito'] != true) {
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFF1F2),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFFFECDD3)),
+                                        ),
+                                        child: Text(
+                                          '#${item['indice']} Error',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF9F1239),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    final placa = (item['placa_normalizada'] ?? '').toString().isNotEmpty
+                                        ? item['placa_normalizada']
+                                        : (item['placa_detectada'] ?? 'N/L');
+                                    final tarifa = item['tarifa_estimada'] ?? 0;
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      ),
+                                      child: Text(
+                                        '#${item['indice']} · $placa · ${item['categoria']} · ${item['ejes']} ejes · ${item['pasajeros']} pas. · Bs. $tarifa',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF0F172A),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                                if (resumenLote is Map<String, dynamic> && analisis.length > 1) ...[
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                                    ),
+                                    child: Text(
+                                      'Lote ${resumenLote['exitosas']}/${resumenLote['total_imagenes']} · ${resumenLote['total_pasajeros']} pas. · Total Bs. ${resumenLote['total_tarifa_bs']}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF065F46),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                              ],
+                              RichText(
+                                text: TextSpan(
+                                  children: _parseFormattedSpans(
+                                    (msg['text'] ?? '').toString(),
+                                    isUser: isUser,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _imagenesPendientes.isEmpty
+                        ? const SizedBox.shrink()
+                        : Container(
+                            key: ValueKey('queue_${_imagenesPendientes.length}'),
+                            margin: const EdgeInsets.only(top: 6, bottom: 8),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '${_imagenesPendientes.length}/$_maxImagenes imágenes listas para analizar',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                                    ),
+                                    GestureDetector(
+                                      onTap: _loading ? null : () => setState(() => _imagenesPendientes.clear()),
+                                      child: const Text(
+                                        'Quitar todas',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFFE11D48),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  height: 64,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _imagenesPendientes.length,
+                                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                                    itemBuilder: (context, idx) {
+                                      return Stack(
+                                        children: [
+                                          GestureDetector(
+                                            onTap: () => _abrirZoomImagen(_imagenesPendientes[idx]),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Image.memory(
+                                                _imagenesPendientes[idx],
+                                                width: 62,
+                                                height: 62,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 2,
+                                            right: 2,
+                                            child: GestureDetector(
+                                              onTap: () => setState(() => _imagenesPendientes.removeAt(idx)),
+                                              child: Container(
+                                                width: 18,
+                                                height: 18,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.black87,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          tooltip: 'Subir varias fotos (máx. 6)',
+                          style: IconButton.styleFrom(side: const BorderSide(color: Color(0xFFCBD5E1))),
+                          icon: const Icon(Icons.photo_library_outlined, size: 18, color: Color(0xFF0F172A)),
+                          onPressed: _loading ? null : _seleccionarVariasImagenes,
+                        ),
+                        if (_imagenesPendientes.isNotEmpty)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF0F172A),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${_imagenesPendientes.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Tomar foto',
+                      style: IconButton.styleFrom(side: const BorderSide(color: Color(0xFFCBD5E1))),
+                      icon: const Icon(Icons.camera_alt_outlined, size: 18, color: Color(0xFF0F172A)),
+                      onPressed: _loading ? null : _tomarFotoPlaca,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
+                        onSubmitted: _loading ? null : (_) => _consultar(),
+                        decoration: InputDecoration(
+                          hintText: 'Consulta placa, tarifas o pregunta...',
+                          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F172A),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.send, size: 16),
+                      onPressed: _loading ? null : () => _consultar(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TypingDotsIndicator extends StatefulWidget {
+  const _TypingDotsIndicator();
+
+  @override
+  State<_TypingDotsIndicator> createState() => _TypingDotsIndicatorState();
+}
+
+class _TypingDotsIndicatorState extends State<_TypingDotsIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final t = (_controller.value - i * 0.2).clamp(0.0, 1.0);
+            final wave = (t < 0.5 ? t * 2 : (1 - t) * 2).clamp(0.0, 1.0);
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: Transform.translate(
+                offset: Offset(0, -3.0 * wave),
+                child: Opacity(
+                  opacity: 0.35 + 0.65 * wave,
+                  child: Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF0F172A),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
+            );
+          }),
+        );
+      },
     );
   }
 }

@@ -73,6 +73,7 @@ def health_check() -> Dict[str, Any]:
 
 
 @app.get("/ollama/tags")
+@app.get("/ollama/api/tags")
 async def proxy_ollama_tags() -> Any:
     """Proxy para verificar modelos instalados en Ollama a través del puerto 8000 en RunPod."""
     async with httpx.AsyncClient(timeout=5.0) as client:
@@ -85,6 +86,7 @@ async def proxy_ollama_tags() -> Any:
 
 
 @app.post("/ollama/generate")
+@app.post("/ollama/api/generate")
 async def proxy_ollama_generate(payload: Dict[str, Any]) -> Any:
     """
     Proxy conveniente para consultar Ollama a través del puerto 8000 en RunPod,

@@ -8,6 +8,8 @@ use App\Models\Caseta;
 use App\Models\Paso;
 use App\Models\Alerta;
 use App\Models\Tarifa;
+use App\Models\Vehiculo;
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
 
 class CasetaController extends Controller
@@ -65,19 +67,30 @@ class CasetaController extends Controller
             $statusInferencia = 'offline';
         }
 
-        // 2. Probar salud real de Ollama LLM (directo o vía estado reportado por proxy FastAPI)
+        // 2. Probar salud real de Ollama LLM (directo, vía /ollama/tags o reporte de FastAPI)
+        $ollamaTagsUrl = str_ends_with($ollamaUrl, '/ollama')
+            ? "{$ollamaUrl}/tags"
+            : "{$ollamaUrl}/api/tags";
         $statusOllama = 'offline';
+        $ollamaModels = [];
         try {
-            $respOllama = Http::timeout(3)->get($ollamaUrl . '/api/tags');
+            $respOllama = Http::timeout(4)->get($ollamaTagsUrl);
             if ($respOllama->successful()) {
-                $statusOllama = 'online';
+                $tagsData = $respOllama->json();
+                $models = is_array($tagsData) ? ($tagsData['models'] ?? []) : [];
+                $ollamaModels = collect($models)
+                    ->map(fn ($m) => is_array($m) ? ($m['name'] ?? ($m['model'] ?? null)) : null)
+                    ->filter()
+                    ->values()
+                    ->all();
+                $statusOllama = count($ollamaModels) > 0 ? 'online' : 'sin_modelo';
             }
         } catch (\Exception $e) {
             $statusOllama = 'offline';
         }
 
-        if ($statusOllama !== 'online' && !empty($detallesModelos['ollama_online'])) {
-            $statusOllama = 'online';
+        if ($statusOllama === 'offline' && !empty($detallesModelos['ollama_online'])) {
+            $statusOllama = count($ollamaModels) > 0 ? 'online' : 'sin_modelo';
         }
 
         $latency = round((microtime(true) - $t0) * 1000, 2);
@@ -97,7 +110,10 @@ class CasetaController extends Controller
                 'ollama_llm' => ($statusOllama === 'online'),
             ],
             'ollama_status' => $statusOllama,
+            'ollama_models' => $ollamaModels,
             'ollama_url' => $ollamaUrl,
+            'vehiculos_registrados' => Vehiculo::count(),
+            'usuarios_autorizados' => User::where('activo', true)->count(),
             'detalles' => $detallesModelos,
         ]);
     }

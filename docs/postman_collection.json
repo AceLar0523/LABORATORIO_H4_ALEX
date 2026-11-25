@@ -1,0 +1,138 @@
+{
+  "info": {
+    "name": "Peaje Inteligente API v1",
+    "_postman_id": "a7b4c9e1-2026-4e11-9b00-peajeinteligente",
+    "description": "Colección de endpoints REST del Sistema Inteligente de Control de Peaje (Google OAuth 2.0, Caseta, Placas, Tiempo Real SSE y Agente IA).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://peaje.tudominio.com/api/v1" },
+    { "key": "token", "value": "" },
+    { "key": "googleIdToken", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "1. Auth Google OAuth Config",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "url": "{{baseUrl}}/auth/config"
+      }
+    },
+    {
+      "name": "2. Auth Google Login (Lista Blanca)",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id_token\": \"{{googleIdToken}}\"\n}"
+        },
+        "url": "{{baseUrl}}/auth/google"
+      }
+    },
+    {
+      "name": "3. Estado Inferencia RunPod y Ollama",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/estado/inferencia"
+      }
+    },
+    {
+      "name": "4. Registrar Frame (Modo Caseta)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"caseta_id\": 1,\n  \"frame_base64\": \"data:image/jpeg;base64,...\"\n}"
+        },
+        "url": "{{baseUrl}}/pasos/frame"
+      }
+    },
+    {
+      "name": "5. Consultar Placa por Texto",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"placa\": \"4021-XYZ\"\n}"
+        },
+        "url": "{{baseUrl}}/placas/consultar"
+      }
+    },
+    {
+      "name": "6. Consultar Placa por Imagen",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"imagen_base64\": \"data:image/jpeg;base64,...\"\n}"
+        },
+        "url": "{{baseUrl}}/placas/consultar-imagen"
+      }
+    },
+    {
+      "name": "7. Historial de Placa",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/placas/4021XYZ/historial"
+      }
+    },
+    {
+      "name": "8. Resumen de Caseta",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/casetas/1/resumen"
+      }
+    },
+    {
+      "name": "9. Agente Conversacional (Texto y Multi-Imagen)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mensaje\": \"Consulta la placa 4021XYZ\",\n  \"historial\": []\n}"
+        },
+        "url": "{{baseUrl}}/agente/chat"
+      }
+    },
+    {
+      "name": "10. Panel Resumen General",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/panel/resumen"
+      }
+    },
+    {
+      "name": "11. Listar Vehículos",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/vehiculos"
+      }
+    },
+    {
+      "name": "12. Listar Alertas",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/alertas"
+      }
+    },
+    {
+      "name": "13. Listar Tarifas",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/tarifas"
+      }
+    }
+  ]
+}
+

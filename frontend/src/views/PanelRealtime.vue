@@ -1,10 +1,10 @@
 <template>
   <div class="space-y-6">
-    <!-- Encabezado con estado en vivo y botones de simulación -->
+    <!-- Encabezado con estado en vivo -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
       <div>
         <h1 class="text-xl font-bold text-slate-900 tracking-tight">Monitoreo de Caseta en Vivo</h1>
-        <p class="text-xs text-slate-500 mt-0.5">Transmisión instantánea de pasos y cobros (SQLite Integrado)</p>
+        <p class="text-xs text-slate-500 mt-0.5">Transmisión instantánea de pasos y cobros en caseta</p>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -21,17 +21,6 @@
           <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           Conectado en Vivo
         </span>
-        <button
-          @click="simularPaso"
-          :disabled="simulando"
-          class="text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-        >
-          <svg v-if="simulando" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-          <span>{{ simulando ? 'Registrando...' : '+ Registrar Paso Inmediato' }}</span>
-        </button>
       </div>
     </div>
 
@@ -88,8 +77,8 @@
           </span>
         </div>
         <div class="mt-3">
-          <span class="text-sm font-bold text-slate-800 block">SQLite + RunPod</span>
-          <span class="text-[11px] font-medium text-indigo-600">Almacenamiento Local Rápido</span>
+          <span class="text-sm font-bold text-slate-800 block">RunPod GPU + API</span>
+          <span class="text-[11px] font-medium text-indigo-600">Inferencia en Tiempo Real</span>
         </div>
       </div>
     </div>
@@ -133,7 +122,7 @@
                   <div class="capitalize">{{ p.categoria_detectada }} • {{ p.ejes_detectados }} ejes</div>
                   <div class="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                    <span>{{ p.pasajeros || 1 }} {{ (p.pasajeros || 1) === 1 ? 'pasajero' : 'pasajeros' }}</span>
+                    <span>{{ p.pasajeros ?? 0 }} {{ (p.pasajeros ?? 0) === 1 ? 'pasajero' : 'pasajeros' }}</span>
                   </div>
                 </td>
                 <td class="py-2.5 px-4 font-bold text-slate-900">
@@ -217,7 +206,6 @@ const stats = ref({
 
 const ultimosPasos = ref([])
 const ultimasAlertas = ref([])
-const simulando = ref(false)
 const cargando = ref(false)
 let eventSource = null
 let pollInterval = null
@@ -262,30 +250,6 @@ async function atenderAlerta(id) {
   }
 }
 
-async function simularPaso() {
-  simulando.value = true
-  try {
-    const placas = ['4021XYZ', '3142ABC', '9999INV', '1540QWE', '8888EVASION']
-    const randomPlaca = placas[Math.floor(Math.random() * placas.length)]
-
-    const canvas = document.createElement('canvas')
-    canvas.width = 100
-    canvas.height = 100
-    const base64 = canvas.toDataURL('image/jpeg')
-
-    await api.post('/pasos/frame', {
-      frame_base64: base64,
-      mock_placa: randomPlaca,
-      caseta_id: 1,
-    })
-    await cargarResumen()
-  } catch (err) {
-    console.error('Error simulando paso:', err)
-  } finally {
-    simulando.value = false
-  }
-}
-
 function iniciarTiempoReal() {
   const url = `${api.defaults.baseURL}/stream/eventos`
   try {
@@ -307,7 +271,7 @@ function iniciarTiempoReal() {
     })
 
     eventSource.onerror = () => {
-      // Si SSE tiene problemas en dev, el fallback se encarga
+      // Reconexión automática o polling de respaldo
     }
   } catch (e) {
     console.warn('SSE no disponible, usando polling:', e)

@@ -1,136 +1,206 @@
 <template>
-  <div>
-    <!-- Botón Flotante Disparador -->
-    <button
-      v-if="!abierto"
-      @click="abrirChat"
-      class="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 active:scale-95 cursor-pointer border border-blue-500/30"
-      title="Consultar Agente de Placas"
-    >
-      <div class="relative">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-        </svg>
-        <span
-          class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-blue-600"
-          :class="ollamaOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"
-        ></span>
-      </div>
-      <span class="text-xs font-semibold">Agente IA</span>
-    </button>
-
-    <!-- Ventana Flotante del Chatbot -->
-    <transition name="chat-slide">
+  <div class="fixed bottom-5 right-5 z-50 flex flex-col items-end">
+    <!-- Ventana del Agente Flotante -->
+    <Transition name="chat-pop">
       <div
         v-if="abierto"
-        class="fixed bottom-6 right-6 z-50 w-[380px] sm:w-[420px] h-[520px] max-h-[85vh] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        class="mb-3 w-[380px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[82vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden origin-bottom-right"
       >
-        <!-- Header del Chatbot Flotante con Estado Real de Conexión -->
-        <div class="px-4 py-3 bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 text-white flex items-center justify-between shadow-sm">
-          <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-white/10 backdrop-blur border border-white/20 flex items-center justify-center font-bold text-sm">
-              🤖
-            </div>
-            <div>
-              <div class="text-xs font-bold leading-tight flex items-center gap-1.5">
-                <span>Agente Peaje IA</span>
+        <!-- Cabecera -->
+        <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-semibold flex items-center gap-2">
+              <span>Agente Exclusivo de Peaje</span>
+            </h3>
+            <div class="flex items-center gap-2 text-[11px] text-slate-300 mt-0.5">
+              <span class="inline-flex items-center gap-1">
                 <span
                   class="w-2 h-2 rounded-full"
-                  :class="ollamaOnline ? 'bg-emerald-400' : 'bg-amber-400'"
-                  :title="ollamaOnline ? 'Ollama en línea' : 'Modo estructurado (Ollama offline)'"
+                  :class="estadoVision === 'online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"
                 ></span>
-              </div>
-              <span class="text-[10px] text-blue-200">
-                {{ ollamaOnline ? 'Ollama LLM (Llama 3.2)' : 'Modo BD Directo (Ollama Inactivo)' }}
+                Visión M1–M4: {{ estadoVision === 'online' ? 'En línea' : 'Offline' }}
+              </span>
+              <span>·</span>
+              <span class="inline-flex items-center gap-1">
+                <span
+                  class="w-2 h-2 rounded-full"
+                  :class="{
+                    'bg-emerald-400 animate-pulse': estadoOllama === 'online',
+                    'bg-amber-400': estadoOllama === 'sin_modelo',
+                    'bg-rose-400': estadoOllama === 'offline'
+                  }"
+                ></span>
+                LLM:
+                {{
+                  estadoOllama === 'online'
+                    ? 'Activo'
+                    : estadoOllama === 'sin_modelo'
+                      ? 'Sin modelo'
+                      : 'Offline'
+                }}
               </span>
             </div>
           </div>
+          <div class="flex items-center gap-1">
+            <button
+              @click="reiniciarChat"
+              title="Nueva conversación"
+              class="text-xs text-slate-300 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition"
+            >
+              Limpiar
+            </button>
+            <button
+              @click="abierto = false"
+              class="text-slate-300 hover:text-white p-1 rounded hover:bg-slate-800 transition"
+              aria-label="Cerrar chat"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- Aviso si Ollama no tiene modelo aún -->
+        <div
+          v-if="estadoOllama === 'sin_modelo'"
+          class="bg-amber-50 border-b border-amber-200 px-3 py-1.5 text-[11px] text-amber-800"
+        >
+          Visión M1–M4 y consultas a BD activas en RunPod. Ollama espera modelo (`llama3.2:3b`) para redacción libre.
+        </div>
+
+        <!-- Chips rápidos -->
+        <div class="px-3 py-2 bg-slate-50 border-b border-slate-200 flex gap-1.5 overflow-x-auto">
           <button
-            @click="abierto = false"
-            class="text-blue-200 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-            title="Cerrar chat"
+            v-for="chip in chipsRapidos"
+            :key="chip.label"
+            @click="enviarChip(chip.prompt)"
+            :disabled="cargando"
+            class="shrink-0 text-[11px] px-2.5 py-1 rounded-full bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 active:scale-95 transition disabled:opacity-50"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            {{ chip.label }}
           </button>
         </div>
 
-        <!-- Banner Discreto Informativo de Conexión -->
-        <div
-          v-if="!ollamaOnline && verificado"
-          class="bg-amber-50 border-b border-amber-200 px-3 py-1.5 text-[10px] text-amber-800 flex items-center justify-between"
-        >
-          <span>ℹ️ Ollama no detectado en puerto 11434. Operando con respuestas directas de BD.</span>
-          <button @click="verificarConexion" class="font-bold underline ml-1 cursor-pointer">Reintentar</button>
-        </div>
-
-        <!-- Área de Mensajes -->
-        <div class="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/70" ref="messagesContainer">
-          <div
-            v-for="(m, idx) in mensajes"
-            :key="idx"
-            class="flex"
-            :class="m.remitente === 'usuario' ? 'justify-end' : 'justify-start'"
-          >
+        <!-- Lista de mensajes -->
+        <div ref="contenedorMensajes" class="flex-1 overflow-y-auto p-3 bg-slate-50">
+          <TransitionGroup name="msg-in" tag="div" class="space-y-3">
             <div
-              class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-xs"
-              :class="m.remitente === 'usuario'
-                ? 'bg-blue-600 text-white rounded-br-xs'
-                : 'bg-white border border-slate-200 text-slate-800 rounded-bl-xs'"
+              v-for="(msg, idx) in mensajes"
+              :key="idx"
+              class="flex"
+              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
             >
-              <div v-if="m.imagen" class="mb-2 rounded-lg overflow-hidden border border-slate-300 max-w-[160px]">
-                <img :src="m.imagen" class="w-full h-auto object-cover" />
+              <div
+                class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm"
+                :class="
+                  msg.role === 'user'
+                    ? 'bg-slate-900 text-white rounded-br-sm'
+                    : msg.estado === 'Fuera de dominio'
+                      ? 'bg-amber-50 text-amber-950 border border-amber-200 rounded-bl-sm'
+                      : 'bg-white text-slate-800 border border-slate-200 rounded-bl-sm'
+                "
+              >
+                <!-- Miniaturas enviadas por el usuario -->
+                <div v-if="msg.imagenes && msg.imagenes.length" class="flex flex-wrap gap-1.5 mb-2">
+                  <img
+                    v-for="(img, iIdx) in msg.imagenes"
+                    :key="iIdx"
+                    :src="img"
+                    alt="Vehículo adjunto"
+                    class="w-16 h-16 object-cover rounded-lg border border-slate-600"
+                  />
+                </div>
+
+                <div class="whitespace-pre-wrap" v-html="formatearTexto(msg.content)"></div>
               </div>
-              <div class="whitespace-pre-line">{{ m.texto }}</div>
             </div>
-          </div>
+          </TransitionGroup>
 
-          <div v-if="cargando" class="flex justify-start">
-            <div class="bg-white border border-slate-200 rounded-2xl rounded-bl-xs px-3 py-2 text-slate-500 text-[11px] flex items-center gap-2 shadow-xs">
-              <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
-              <span>Consultando base de datos...</span>
+          <div v-if="cargando" class="flex justify-start mt-3">
+            <div class="bg-white border border-slate-200 text-slate-500 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-xs flex items-center gap-2 shadow-sm">
+              <span class="flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce [animation-delay:0ms]"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce [animation-delay:150ms]"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce [animation-delay:300ms]"></span>
+              </span>
+              <span>Analizando en RunPod y consultando peaje...</span>
             </div>
           </div>
         </div>
 
-        <!-- Barra Inferior de Entrada -->
-        <div class="p-2.5 bg-white border-t border-slate-200">
-          <div v-if="imagenBase64" class="mb-2 flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-            <img :src="imagenBase64" class="w-8 h-8 object-cover rounded border border-slate-300" />
-            <span class="text-[11px] text-slate-600 truncate flex-1">Foto de placa lista</span>
-            <button @click="quitarImagen" class="text-rose-600 hover:text-rose-800 text-[11px] font-medium pr-1 cursor-pointer">Quitar</button>
-          </div>
-
-          <form @submit.prevent="enviar" class="flex items-center gap-1.5">
-            <label class="cursor-pointer p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition" title="Subir foto de placa">
-              <input type="file" accept="image/*" class="hidden" @change="onFileChange" />
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </label>
-
-            <input
-              v-model="inputTexto"
-              type="text"
-              placeholder="Consulta una placa (ej. 4021XYZ)..."
-              class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
-            />
-
-            <button
-              type="submit"
-              :disabled="cargando || (!inputTexto && !imagenBase64)"
-              class="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white p-2 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
+        <!-- Cola de imágenes seleccionadas -->
+        <div v-if="imagenesSeleccionadas.length" class="px-3 py-2 bg-slate-100 border-t border-slate-200">
+          <div class="flex items-center justify-between text-[11px] text-slate-600 mb-1.5">
+            <span>{{ imagenesSeleccionadas.length }}/{{ maxImagenes }} imágenes listas para analizar</span>
+            <button @click="imagenesSeleccionadas = []" class="text-rose-600 hover:underline">
+              Quitar todas
             </button>
-          </form>
+          </div>
+          <div class="flex gap-2 overflow-x-auto pb-1">
+            <div
+              v-for="(img, idx) in imagenesSeleccionadas"
+              :key="idx"
+              class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-slate-300 bg-white"
+            >
+              <img :src="img" class="w-full h-full object-cover" alt="Previsualización" />
+              <button
+                @click="quitarImagen(idx)"
+                class="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900/80 text-white text-[10px] flex items-center justify-center"
+                title="Quitar imagen"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
         </div>
+
+        <!-- Barra de entrada -->
+        <form @submit.prevent="enviarMensaje" class="p-2.5 bg-white border-t border-slate-200 flex items-center gap-2">
+          <label
+            class="cursor-pointer p-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 active:scale-95 transition shrink-0"
+            title="Subir una o varias imágenes (máx. 6)"
+          >
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              class="hidden"
+              @change="manejarImagenes"
+              :disabled="cargando"
+            />
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </label>
+
+          <input
+            v-model="entradaTexto"
+            type="text"
+            placeholder="Consulta placa, tarifas o adjunta fotos..."
+            class="flex-1 text-xs border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+            :disabled="cargando"
+          />
+
+          <button
+            type="submit"
+            :disabled="cargando || (!entradaTexto.trim() && imagenesSeleccionadas.length === 0)"
+            class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 active:scale-95 transition disabled:opacity-40 shrink-0"
+          >
+            Enviar
+          </button>
+        </form>
       </div>
-    </transition>
+    </Transition>
+
+    <!-- Botón flotante -->
+    <button
+      @click="toggleChat"
+      class="h-13 px-4 rounded-full bg-slate-900 text-white shadow-lg hover:bg-slate-800 hover:scale-105 active:scale-95 flex items-center gap-2 text-sm font-medium transition-all duration-200"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      </svg>
+      <span>{{ abierto ? 'Cerrar Agente' : 'Agente IA Peaje' }}</span>
+    </button>
   </div>
 </template>
 
@@ -138,95 +208,166 @@
 import { ref, nextTick, onMounted } from 'vue'
 import api from '../services/api'
 
+const maxImagenes = 6
 const abierto = ref(false)
-const inputTexto = ref('')
-const imagenBase64 = ref(null)
 const cargando = ref(false)
-const messagesContainer = ref(null)
-const ollamaOnline = ref(false)
-const verificado = ref(false)
+const entradaTexto = ref('')
+const imagenesSeleccionadas = ref([])
+const contenedorMensajes = ref(null)
 
-const mensajes = ref([
-  {
-    remitente: 'agente',
-    texto: '¡Hola! Soy tu asistente de control de peaje. Puedes consultarme el estado de cualquier placa escribiéndola (ej: 4021XYZ) o enviando una fotografía.',
+const estadoVision = ref('offline')
+const estadoOllama = ref('offline')
+
+const chipsRapidos = [
+  { label: 'Tarifas', prompt: '¿Cuáles son las tarifas vigentes del peaje?' },
+  { label: 'Resumen de hoy', prompt: 'Dame el resumen de pasos y recaudación del sistema' },
+  { label: 'Alertas activas', prompt: '¿Cuántas alertas pendientes hay y cuáles son?' },
+]
+
+const mensajeBienvenida = () => ({
+  role: 'assistant',
+  content:
+    'Soy el asistente exclusivo del **Sistema Inteligente de Control de Peaje**.\n' +
+    'Puedes subir **1 o varias fotos de vehículos** (hasta 6) para analizar placa (M1), categoría (M2), ejes (M3), pasajeros (M4) y tarifa, o consultarme sobre placas, tarifas, alertas y recaudación.',
+  imagenes: [],
+})
+
+const mensajes = ref([mensajeBienvenida()])
+
+const toggleChat = () => {
+  abierto.value = !abierto.value
+  if (abierto.value) {
+    verificarConexion()
+    scrollAbajo()
   }
-])
+}
 
-async function verificarConexion() {
+const reiniciarChat = () => {
+  mensajes.value = [mensajeBienvenida()]
+  imagenesSeleccionadas.value = []
+}
+
+const verificarConexion = async () => {
   try {
-    const res = await api.get('/estado/inferencia')
-    ollamaOnline.value = (res.data.ollama_status === 'online')
-  } catch (e) {
-    ollamaOnline.value = false
-  } finally {
-    verificado.value = true
+    const { data } = await api.get('/estado/inferencia')
+    estadoVision.value = data.status === 'online' ? 'online' : 'offline'
+    estadoOllama.value = data.ollama_status || (data.modelos?.ollama_llm ? 'online' : 'offline')
+  } catch {
+    estadoVision.value = 'offline'
+    estadoOllama.value = 'offline'
   }
 }
 
-function abrirChat() {
-  abierto.value = true
-  verificarConexion()
-}
+const manejarImagenes = async (e) => {
+  const archivos = Array.from(e.target.files || [])
+  if (!archivos.length) return
 
-function onFileChange(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = (event) => {
-    imagenBase64.value = event.target.result
+  const disponibles = maxImagenes - imagenesSeleccionadas.value.length
+  const lote = archivos.slice(0, Math.max(0, disponibles))
+
+  for (const archivo of lote) {
+    const dataUri = await leerArchivoBase64(archivo)
+    if (dataUri) {
+      imagenesSeleccionadas.value.push(dataUri)
+    }
   }
-  reader.readAsDataURL(file)
+
+  e.target.value = ''
 }
 
-function quitarImagen() {
-  imagenBase64.value = null
-}
-
-async function scrollAbajo() {
-  await nextTick()
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-  }
-}
-
-async function enviar() {
-  const txt = inputTexto.value.trim()
-  const img = imagenBase64.value
-
-  if (!txt && !img) return
-
-  mensajes.value.push({
-    remitente: 'usuario',
-    texto: txt || 'Consultando placa por fotografía...',
-    imagen: img,
+const leerArchivoBase64 = (file) =>
+  new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
   })
 
-  inputTexto.value = ''
-  imagenBase64.value = null
+const quitarImagen = (idx) => {
+  imagenesSeleccionadas.value.splice(idx, 1)
+}
+
+const enviarChip = (prompt) => {
+  entradaTexto.value = prompt
+  enviarMensaje()
+}
+
+const construirHistorial = () =>
+  mensajes.value.slice(-12).map((m) => ({
+    role: m.role,
+    content: m.content,
+  }))
+
+const enviarMensaje = async () => {
+  const texto = entradaTexto.value.trim()
+  const imagenes = [...imagenesSeleccionadas.value]
+
+  if (!texto && imagenes.length === 0) return
+
+  const historial = construirHistorial()
+
+  mensajes.value.push({
+    role: 'user',
+    content: texto || `Analizar ${imagenes.length} imagen(es) vehicular(es)`,
+    imagenes,
+  })
+
+  entradaTexto.value = ''
+  imagenesSeleccionadas.value = []
   cargando.value = true
-  scrollAbajo()
+  await scrollAbajo()
 
   try {
-    const res = await api.post('/agente/chat', {
-      mensaje: txt,
-      imagen_base64: img,
-    })
+    const payload = {
+      historial,
+    }
+    if (texto) payload.mensaje = texto
+    if (imagenes.length > 0) {
+      payload.imagenes_base64 = imagenes
+      if (imagenes.length === 1) {
+        payload.imagen_base64 = imagenes[0]
+      }
+    }
 
+    const { data } = await api.post('/agente/chat', payload)
     mensajes.value.push({
-      remitente: 'agente',
-      texto: res.data.respuesta,
-      estado: res.data.estado,
+      role: 'assistant',
+      content: data.respuesta || 'Sin respuesta del agente.',
+      estado: data.estado || null,
+      imagenes: [],
     })
   } catch (err) {
+    const detalle = err.response?.data?.respuesta || err.response?.data?.message || 'Error al consultar el agente.'
     mensajes.value.push({
-      remitente: 'agente',
-      texto: 'No se pudo procesar la consulta: ' + (err.response?.data?.message || err.message),
+      role: 'assistant',
+      content: detalle,
+      imagenes: [],
     })
   } finally {
     cargando.value = false
-    scrollAbajo()
+    await scrollAbajo()
   }
+}
+
+const scrollAbajo = async () => {
+  await nextTick()
+  if (contenedorMensajes.value) {
+    contenedorMensajes.value.scrollTop = contenedorMensajes.value.scrollHeight
+  }
+}
+
+const escaparHtml = (s) =>
+  String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+const formatearTexto = (texto) => {
+  const seguro = escaparHtml(texto || '')
+  return seguro
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-slate-100 text-slate-800 font-mono text-[11px]">$1</code>')
 }
 
 onMounted(() => {
@@ -235,14 +376,21 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.chat-slide-enter-active,
-.chat-slide-leave-active {
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.chat-pop-enter-active,
+.chat-pop-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.chat-pop-enter-from,
+.chat-pop-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.95);
 }
 
-.chat-slide-enter-from,
-.chat-slide-leave-to {
+.msg-in-enter-active {
+  transition: opacity 0.24s ease-out, transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.msg-in-enter-from {
   opacity: 0;
-  transform: translateY(20px) scale(0.96);
+  transform: translateY(10px);
 }
 </style>

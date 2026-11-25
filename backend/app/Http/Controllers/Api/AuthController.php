@@ -13,39 +13,45 @@ class AuthController extends Controller
 {
     /**
      * POST /api/v1/auth/login
-     * Login directo con usuario/email y contraseña (Admin u Operador)
+     * Login directo con correo y contraseña verificados con hash seguro.
      */
     public function credentialsLogin(Request $request)
     {
         $request->validate([
-            'email' => 'required|string',
+            'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
-        $email = trim($request->input('email'));
-        $password = $request->input('password');
+        $email = strtolower(trim($request->input('email')));
+        $password = (string) $request->input('password');
 
-        $user = User::where('email_google', $email)->first();
+        $user = User::whereRaw('LOWER(email_google) = ?', [$email])->first();
 
         if (!$user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Usuario no encontrado en la lista blanca de la base de datos.',
+                'message' => 'Usuario no encontrado en la lista blanca del sistema.',
             ], 404);
         }
 
         if (!$user->activo) {
             return response()->json([
                 'success' => false,
-                'message' => 'El usuario se encuentra inactivo.',
+                'message' => 'Tu cuenta se encuentra desactivada. Contacta al administrador.',
             ], 403);
         }
 
-        // Verificar contraseña (o permitir password por defecto si no tenía)
-        if ($user->password && !Hash::check($password, $user->password) && $password !== 'admin123') {
+        if (empty($user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Contraseña incorrecta.',
+                'message' => 'Esta cuenta utiliza únicamente inicio de sesión con Google OAuth 2.0.',
+            ], 403);
+        }
+
+        if (!Hash::check($password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Credenciales inválidas.',
             ], 401);
         }
 
@@ -59,58 +65,97 @@ class AuthController extends Controller
                 'nombre' => $user->nombre,
                 'email_google' => $user->email_google,
                 'rol' => $user->rol,
-                'activo' => $user->activo,
+                'activo' => (bool) $user->activo,
             ],
         ]);
     }
 
     /**
+     * GET /api/v1/auth/config
+     * Expone configuración pública de Google OAuth 2.0 (Web y Móvil Android) para los clientes.
+     */
+    public function authConfig()
+    {
+        $webClientId = trim((string) env('GOOGLE_CLIENT_ID', ''));
+        $androidClientId = trim((string) env('GOOGLE_ANDROID_CLIENT_ID', ''));
+
+        return response()->json([
+            'google_client_id' => $webClientId,
+            'google_android_client_id' => $androidClientId,
+            'google_oauth_enabled' => ($webClientId !== '' || $androidClientId !== ''),
+        ]);
+    }
+
+    /**
      * POST /api/v1/auth/google
-     * Recibe token de Google o autentica contra lista blanca
+     * Valida el ID Token real de Google OAuth 2.0 (Web o Android) contra Google tokeninfo y lista blanca.
      */
     public function googleLogin(Request $request)
     {
         $request->validate([
             'id_token' => 'nullable|string',
             'token' => 'nullable|string',
-            'email' => 'nullable|email',
-            'name' => 'nullable|string',
         ]);
+
+        $allowedClientIds = array_values(array_filter([
+            trim((string) env('GOOGLE_CLIENT_ID', '')),
+            trim((string) env('GOOGLE_ANDROID_CLIENT_ID', '')),
+        ]));
+
+        if (empty($allowedClientIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Google OAuth 2.0 aún no está configurado en el servidor.',
+            ], 503);
+        }
+
+        $token = $request->input('id_token') ?? $request->input('token');
+        if (!$token) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Se requiere id_token de Google OAuth 2.0.',
+            ], 422);
+        }
 
         $googleEmail = null;
         $googleName = null;
 
-        $token = $request->input('id_token') ?? $request->input('token');
+        try {
+            $response = Http::timeout(8)->get('https://oauth2.googleapis.com/tokeninfo', [
+                'id_token' => $token,
+            ]);
 
-        if ($token) {
-            try {
-                $response = Http::timeout(5)->get('https://oauth2.googleapis.com/tokeninfo', [
-                    'id_token' => $token,
-                ]);
+            if ($response->successful()) {
+                $payload = $response->json();
+                $aud = (string) ($payload['aud'] ?? '');
+                $audOk = in_array($aud, $allowedClientIds, true);
+                $verifiedOk = !isset($payload['email_verified'])
+                    || $payload['email_verified'] === true
+                    || $payload['email_verified'] === 'true';
 
-                if ($response->successful()) {
-                    $payload = $response->json();
+                if ($audOk && $verifiedOk) {
                     $googleEmail = $payload['email'] ?? null;
                     $googleName = $payload['name'] ?? null;
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Token de Google inválido para esta aplicación o correo no verificado.',
+                    ], 401);
                 }
-            } catch (\Exception $e) {
-                Log::warning('Error verificando token con Google: ' . $e->getMessage());
             }
-        }
-
-        if (!$googleEmail && $request->filled('email')) {
-            $googleEmail = $request->input('email');
-            $googleName = $request->input('name', 'Usuario Google');
+        } catch (\Exception $e) {
+            Log::warning('Error verificando token con Google: ' . $e->getMessage());
         }
 
         if (!$googleEmail) {
             return response()->json([
                 'success' => false,
-                'message' => 'Token de Google inválido o no se pudo obtener el correo.',
+                'message' => 'Token de Google inválido o expirado.',
             ], 401);
         }
 
-        $user = User::where('email_google', $googleEmail)->first();
+        $emailNormalized = strtolower(trim($googleEmail));
+        $user = User::whereRaw('LOWER(email_google) = ?', [$emailNormalized])->first();
 
         if (!$user) {
             return response()->json([
@@ -126,7 +171,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        if ($googleName && $user->nombre !== $googleName) {
+        if ($googleName && (empty($user->nombre) || $user->nombre === 'Usuario Google')) {
             $user->nombre = $googleName;
             $user->save();
         }
@@ -141,7 +186,7 @@ class AuthController extends Controller
                 'nombre' => $user->nombre,
                 'email_google' => $user->email_google,
                 'rol' => $user->rol,
-                'activo' => $user->activo,
+                'activo' => (bool) $user->activo,
             ],
         ]);
     }

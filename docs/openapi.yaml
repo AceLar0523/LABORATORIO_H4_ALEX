@@ -1,0 +1,240 @@
+openapi: 3.0.3
+info:
+  title: API REST - Sistema Inteligente de Control de Peaje
+  version: 1.0.0
+  description: >
+    API REST para control vehicular en casetas de peaje con inferencia IA en RunPod
+    (M1 Detección/OCR, M2 Segmentación, M3 Keypoints de ejes, M4 Pasajeros),
+    actualización en tiempo real vía SSE, autenticación exclusiva Google OAuth 2.0 y agente conversacional.
+servers:
+  - url: https://peaje.tudominio.com/api/v1
+    description: Producción (HTTPS en subdominio)
+  - url: http://localhost:8000/api/v1
+    description: Entorno de pruebas local
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+
+security:
+  - BearerAuth: []
+
+paths:
+  /ping:
+    get:
+      summary: Ping de disponibilidad del servidor
+      security: []
+      responses:
+        '200':
+          description: Servidor en línea
+  /auth/config:
+    get:
+      summary: Configuración pública de Google OAuth 2.0
+      security: []
+      responses:
+        '200':
+          description: Client IDs web/Android habilitados
+  /auth/google:
+    post:
+      summary: Iniciar sesión exclusivamente con Google Sign-In / OAuth 2.0
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token:
+                  type: string
+      responses:
+        '200':
+          description: Token Sanctum emitido para usuario autorizado en lista blanca
+        '403':
+          description: Cuenta no autorizada o desactivada
+  /auth/me:
+    get:
+      summary: Perfil del usuario autenticado
+      responses:
+        '200':
+          description: Datos del usuario actual
+  /pasos/frame:
+    post:
+      summary: Registrar frame o foto vehicular en Modo Caseta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                frame_base64:
+                  type: string
+                caseta_id:
+                  type: integer
+                  default: 1
+      responses:
+        '201':
+          description: Paso registrado, tarifa calculada y evento emitido en tiempo real
+  /placas/consultar:
+    post:
+      summary: Consultar estado de una placa por texto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [placa]
+              properties:
+                placa:
+                  type: string
+                  example: 4021-XYZ
+      responses:
+        '200':
+          description: Estado (Registrada y con paso | Registrada sin paso | Identificada no registrada | No existe) y sugerencias
+  /placas/consultar-imagen:
+    post:
+      summary: Consultar placa a partir de una imagen (M1 + OCR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imagen_base64:
+                  type: string
+      responses:
+        '200':
+          description: Placa leída, normalizada, estado y sugerencias
+  /placas/{placa}/historial:
+    get:
+      summary: Historial de pasos de una placa
+      parameters:
+        - name: placa
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de pasos y vehículo asociado
+  /casetas/{id}/resumen:
+    get:
+      summary: Resumen de conteo y recaudación del día por caseta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Conteo de pasos y monto recaudado
+  /agente/chat:
+    post:
+      summary: Agente conversacional exclusivo del proyecto (texto + multi-imagen)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mensaje:
+                  type: string
+                imagen_base64:
+                  type: string
+                imagenes_base64:
+                  type: array
+                  maxItems: 6
+                  items:
+                    type: string
+                historial:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                      content:
+                        type: string
+      responses:
+        '200':
+          description: Respuesta del agente con análisis por imagen y estado de dominio
+  /vehiculos:
+    get:
+      summary: Listar vehículos del padrón
+      responses:
+        '200':
+          description: Lista de vehículos
+    post:
+      summary: Registrar vehículo
+      responses:
+        '201':
+          description: Vehículo creado
+  /pasos:
+    get:
+      summary: Historial de pasos registrados
+      responses:
+        '200':
+          description: Lista paginada/reciente de pasos
+  /panel/resumen:
+    get:
+      summary: Resumen general de pasos, recaudación y alertas pendientes
+      responses:
+        '200':
+          description: Métricas consolidadas
+  /alertas:
+    get:
+      summary: Listar alertas generadas (placas no registradas / sin saldo)
+      responses:
+        '200':
+          description: Lista de alertas
+  /alertas/{id}/atender:
+    patch:
+      summary: Marcar alerta como atendida
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Alerta actualizada
+  /tarifas:
+    get:
+      summary: Tarifas vigentes por categoría y ejes
+      responses:
+        '200':
+          description: Lista de tarifas
+  /estado/inferencia:
+    get:
+      summary: Estado de RunPod (M1-M4), Ollama y BD
+      responses:
+        '200':
+          description: Diagnóstico completo de inferencia y modelos
+  /usuarios:
+    get:
+      summary: Listar usuarios autorizados en lista blanca Google OAuth
+      responses:
+        '200':
+          description: Lista de usuarios
+    post:
+      summary: Agregar usuario a lista blanca Google OAuth
+      responses:
+        '201':
+          description: Usuario autorizado creado
+  /stream/eventos:
+    get:
+      summary: Stream Server-Sent Events (SSE) en tiempo real para el panel web
+      responses:
+        '200':
+          description: Flujo text/event-stream con nuevos pasos y alertas
+

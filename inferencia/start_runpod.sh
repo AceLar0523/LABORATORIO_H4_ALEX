@@ -116,10 +116,19 @@ else
 
     export OLLAMA_HOST="0.0.0.0:11434"
     export OLLAMA_ORIGINS="*"
-    if [ -d "/workspace" ] && [ -w "/workspace" ]; then
-        export OLLAMA_MODELS="${OLLAMA_MODELS:-/workspace/ollama_models}"
-        mkdir -p "$OLLAMA_MODELS"
+    if [ -z "${OLLAMA_MODELS:-}" ]; then
+        if [ -d "/workspace" ] && [ -w "/workspace" ] && mkdir -p /workspace/ollama_models 2>/dev/null \
+            && touch /workspace/ollama_models/.chmod_test 2>/dev/null \
+            && chmod 644 /workspace/ollama_models/.chmod_test 2>/dev/null; then
+            rm -f /workspace/ollama_models/.chmod_test
+            export OLLAMA_MODELS="/workspace/ollama_models"
+        else
+            rm -f /workspace/ollama_models/.chmod_test 2>/dev/null || true
+            export OLLAMA_MODELS="/root/.ollama/models"
+            echo "[INFO] /workspace no permite chmod; usando almacenamiento local para Ollama: $OLLAMA_MODELS"
+        fi
     fi
+    mkdir -p "$OLLAMA_MODELS"
 
     ollama serve > /tmp/ollama.log 2>&1 &
     OLLAMA_PID=$!

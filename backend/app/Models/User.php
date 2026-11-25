@@ -24,6 +24,10 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    protected $casts = [
+        'activo' => 'boolean',
+    ];
+
     public function pasos()
     {
         return $this->hasMany(Paso::class, 'usuario_id');

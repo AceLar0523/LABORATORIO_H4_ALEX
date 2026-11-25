@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\PlacaController;
 use App\Http\Controllers\Api\CasetaController;
 use App\Http\Controllers\Api\AgenteController;
 use App\Http\Controllers\Api\StreamController;
+use App\Http\Controllers\Api\UsuarioController;
 
 /*
 |--------------------------------------------------------------------------
@@ -27,9 +28,9 @@ Route::prefix('v1')->group(function () {
         ]);
     });
 
-    // Rutas de Login públicas
+    // Configuración y rutas de Login públicas (exclusivo Google OAuth 2.0)
+    Route::get('/auth/config', [AuthController::class, 'authConfig']);
     Route::post('/auth/google', [AuthController::class, 'googleLogin']);
-    Route::post('/auth/login', [AuthController::class, 'credentialsLogin']);
 
     // Stream SSE en tiempo real para Panel Web (permite token por query o cabecera)
     Route::get('/stream/eventos', [StreamController::class, 'stream']);
@@ -56,5 +57,12 @@ Route::prefix('v1')->group(function () {
         Route::patch('/alertas/{id}/atender', [CasetaController::class, 'atenderAlerta']);
         Route::get('/tarifas', [CasetaController::class, 'tarifas']);
         Route::get('/estado/inferencia', [CasetaController::class, 'estadoInferencia']);
+
+        // Gestión de Usuarios y Lista Blanca Google OAuth
+        Route::get('/usuarios', [UsuarioController::class, 'index']);
+        Route::post('/usuarios', [UsuarioController::class, 'store']);
+        Route::put('/usuarios/{id}', [UsuarioController::class, 'update']);
+        Route::patch('/usuarios/{id}/estado', [UsuarioController::class, 'toggleEstado']);
+        Route::delete('/usuarios/{id}', [UsuarioController::class, 'destroy']);
     });
 });

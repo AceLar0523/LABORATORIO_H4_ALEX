@@ -1,0 +1,69 @@
+==============================================================================
+DIAGNÓSTICO DE ERROR EN ENDPOINT DE RUNPOD (HTTP 404 - PROXY CLOUDFLARE)
+Fecha de verificación: 2026-11-25 10:16 (UTC-4)
+==============================================================================
+
+1. ENDPOINTS CONFIGURADOS ACTUALMENTE EN backend/.env
+------------------------------------------------------------------------------
+INFERENCE_URL=https://c4e2a624104c-8000.proxy.runpod.net
+OLLAMA_URL=https://c4e2a624104c-8000.proxy.runpod.net/ollama
+OLLAMA_MODEL=llama3.2:3b
+
+
+2. RESULTADOS OBTENIDOS AL PROBAR LOS ENDPOINTS CON CURL
+------------------------------------------------------------------------------
+- GET  https://c4e2a624104c-8000.proxy.runpod.net/
+  -> HTTP/2 404 | content-length: 0 | server: cloudflare
+
+- GET  https://c4e2a624104c-8000.proxy.runpod.net/health
+  -> HTTP/2 404 | content-length: 0 | server: cloudflare
+
+- GET  https://c4e2a624104c-8000.proxy.runpod.net/ollama/tags
+  -> HTTP/2 404 | content-length: 0 | server: cloudflare
+
+- POST https://c4e2a624104c-8000.proxy.runpod.net/predict
+  -> HTTP/2 404 | content-length: 0 | server: cloudflare
+
+- POST https://c4e2a624104c-8000.proxy.runpod.net/ollama/generate
+  -> HTTP/2 404 | content-length: 0 | server: cloudflare
+
+
+3. ANÁLISIS DEL ERROR
+------------------------------------------------------------------------------
+Las peticiones NO están llegando al servidor FastAPI dentro del Pod.
+Cuando FastAPI no encuentra una ruta devuelve JSON {"detail":"Not Found"},
+mientras que aquí la respuesta es HTTP/2 404 con cuerpo vacío (content-length: 0)
+emitida directamente por el proxy de RunPod/Cloudflare.
+
+Causas probables:
+1) El identificador `c4e2a624104c` (12 caracteres hexadecimales) corresponde al
+   hostname/ID interno del contenedor Docker y NO al RunPod Pod ID oficial
+   (14 caracteres alfanuméricos asignados por RunPod).
+2) El puerto 8000 no está agregado en "Expose HTTP Ports" en la configuración
+   del Pod (o el Pod no fue reiniciado después de exponer el puerto 8000).
+3) El Pod está detenido, reiniciándose o fue terminado.
+
+
+4. PASOS Y COMANDOS PARA VERIFICAR Y CORREGIR EN RUNPOD
+------------------------------------------------------------------------------
+A) Dentro de la terminal del Pod en RunPod:
+   1. Verificar que FastAPI esté corriendo internamente en el puerto 8000:
+      curl -s http://127.0.0.1:8000/
+
+   2. Obtener el Pod ID real y la URL pública oficial de RunPod:
+      echo "https://${RUNPOD_POD_ID}-8000.proxy.runpod.net"
+
+   3. (Alternativa visual) En el panel web de RunPod:
+      Pods -> Seleccionar tu Pod -> Connect -> HTTP Service [Port 8000]
+      y verificar en Edit Pod -> Expose HTTP Ports que esté incluido `8000`.
+
+B) Actualizar backend/.env con el Pod ID real:
+   INFERENCE_URL=https://<RUNPOD_POD_ID>-8000.proxy.runpod.net
+   OLLAMA_URL=https://<RUNPOD_POD_ID>-8000.proxy.runpod.net/ollama
+   OLLAMA_MODEL=llama3.2:3b
+
+C) Probar desde tu PC local una vez actualizada la URL:
+   curl -s https://<RUNPOD_POD_ID>-8000.proxy.runpod.net/
+   curl -s https://<RUNPOD_POD_ID>-8000.proxy.runpod.net/ollama/tags
+   curl -s -F "file=@tu_foto.jpg" https://<RUNPOD_POD_ID>-8000.proxy.runpod.net/predict
+
