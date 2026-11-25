@@ -19,6 +19,11 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Usuarios con Google Email (Lista Blanca y Roles)
         User::updateOrCreate(
+            ['email_google' => 'kevinalexis01mujica@gmail.com'],
+            ['nombre' => 'Kevin Alexis Mujica Laime', 'rol' => 'administrador', 'activo' => true]
+        );
+
+        User::updateOrCreate(
             ['email_google' => 'docente@peaje.edu'],
             ['nombre' => 'Docente Evaluador', 'rol' => 'administrador', 'activo' => true]
         );
