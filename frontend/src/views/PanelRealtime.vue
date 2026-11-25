@@ -29,14 +29,14 @@
       <div class="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-xs interactive-card relative overflow-hidden">
         <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
         <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vehículos Registrados</span>
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tránsitos de Hoy</span>
           <span class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
           </span>
         </div>
         <div class="mt-3 flex items-baseline gap-2">
-          <span class="text-3xl font-extrabold text-slate-900 tracking-tight">{{ stats.total_pasos }}</span>
-          <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Total Tránsitos</span>
+          <span class="text-3xl font-extrabold text-slate-900 tracking-tight">{{ stats.pasos_hoy }}</span>
+          <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{{ stats.total_pasos }} acum. • {{ stats.vehiculos_registrados }} padrón</span>
         </div>
       </div>
 
@@ -110,8 +110,8 @@
               <tr v-for="p in ultimosPasos" :key="p.id" class="hover:bg-blue-50/40 transition-colors animate-new-row">
                 <td class="py-2.5 px-4">
                   <div class="w-12 h-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shadow-2xs">
-                    <img v-if="p.imagen_url" :src="p.imagen_url" class="w-full h-full object-cover" />
-                    <span v-else class="text-[9px] text-slate-400 font-medium">Foto</span>
+                    <img v-if="resolveMediaUrl(p.imagen_url)" :src="resolveMediaUrl(p.imagen_url)" class="w-full h-full object-cover" />
+                    <span v-else class="text-[9px] text-slate-400 font-medium">Sin foto</span>
                   </div>
                 </td>
                 <td class="py-2.5 px-4">
@@ -196,11 +196,13 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import api from '../services/api'
+import api, { resolveMediaUrl } from '../services/api'
 
 const stats = ref({
+  pasos_hoy: 0,
   total_pasos: 0,
   recaudacion_hoy: 0,
+  vehiculos_registrados: 0,
   alertas_pendientes: 0,
 })
 
@@ -229,9 +231,11 @@ async function cargarResumen() {
   cargando.value = true
   try {
     const res = await api.get('/panel/resumen')
-    stats.value.total_pasos = res.data.total_pasos
-    stats.value.recaudacion_hoy = res.data.recaudacion_hoy
-    stats.value.alertas_pendientes = res.data.alertas_pendientes
+    stats.value.pasos_hoy = res.data.pasos_hoy ?? res.data.total_pasos ?? 0
+    stats.value.total_pasos = res.data.total_pasos ?? 0
+    stats.value.recaudacion_hoy = Number(res.data.recaudacion_hoy ?? 0)
+    stats.value.vehiculos_registrados = res.data.vehiculos_registrados ?? 0
+    stats.value.alertas_pendientes = res.data.alertas_pendientes ?? 0
     ultimosPasos.value = res.data.ultimos_pasos || []
     ultimasAlertas.value = res.data.ultimas_alertas || []
   } catch (err) {
@@ -251,23 +255,29 @@ async function atenderAlerta(id) {
 }
 
 function iniciarTiempoReal() {
-  const url = `${api.defaults.baseURL}/stream/eventos`
+  const token = localStorage.getItem('peaje_token') || ''
+  const url = `${api.defaults.baseURL}/stream/eventos?token=${encodeURIComponent(token)}`
   try {
     eventSource = new EventSource(url)
 
     eventSource.addEventListener('nuevo_paso', (e) => {
       const paso = JSON.parse(e.data)
-      ultimosPasos.value.unshift(paso)
-      if (ultimosPasos.value.length > 10) ultimosPasos.value.pop()
-      stats.value.total_pasos += 1
-      stats.value.recaudacion_hoy += parseFloat(paso.monto)
+      if (!ultimosPasos.value.some((x) => x.id === paso.id)) {
+        ultimosPasos.value.unshift(paso)
+        if (ultimosPasos.value.length > 10) ultimosPasos.value.pop()
+        stats.value.pasos_hoy += 1
+        stats.value.total_pasos += 1
+        stats.value.recaudacion_hoy += parseFloat(paso.monto || 0)
+      }
     })
 
     eventSource.addEventListener('nueva_alerta', (e) => {
       const alerta = JSON.parse(e.data)
-      ultimasAlertas.value.unshift(alerta)
-      if (ultimasAlertas.value.length > 10) ultimasAlertas.value.pop()
-      stats.value.alertas_pendientes += 1
+      if (!ultimasAlertas.value.some((x) => x.id === alerta.id)) {
+        ultimasAlertas.value.unshift(alerta)
+        if (ultimasAlertas.value.length > 10) ultimasAlertas.value.pop()
+        stats.value.alertas_pendientes += 1
+      }
     })
 
     eventSource.onerror = () => {

@@ -9,7 +9,6 @@ use App\Models\Caseta;
 use App\Models\Tarifa;
 use App\Models\Paso;
 use App\Models\Alerta;
-use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -49,6 +48,10 @@ class DatabaseSeeder extends Seeder
             ['categoria' => 'camion', 'ejes' => 3, 'monto' => 35.00],
             ['categoria' => 'camion', 'ejes' => 4, 'monto' => 45.00],
             ['categoria' => 'camion', 'ejes' => 5, 'monto' => 60.00],
+            ['categoria' => 'camion', 'ejes' => 6, 'monto' => 75.00],
+            ['categoria' => 'trailer', 'ejes' => 4, 'monto' => 55.00],
+            ['categoria' => 'trailer', 'ejes' => 5, 'monto' => 70.00],
+            ['categoria' => 'trailer', 'ejes' => 6, 'monto' => 85.00],
         ];
 
         foreach ($tarifasData as $t) {
@@ -99,7 +102,7 @@ class DatabaseSeeder extends Seeder
                 'monto' => 10.00,
                 'caseta_id' => $caseta1->id,
                 'usuario_id' => $userOp->id,
-                'imagen_url' => '/storage/evidencias/ejemplo_4021XYZ.jpg',
+                'imagen_url' => null,
                 'estado' => 'Registrada y con paso',
                 'pasajeros' => 2,
             ]
@@ -116,7 +119,7 @@ class DatabaseSeeder extends Seeder
                 'monto' => 35.00,
                 'caseta_id' => $caseta1->id,
                 'usuario_id' => $userOp->id,
-                'imagen_url' => '/storage/evidencias/ejemplo_alerta.jpg',
+                'imagen_url' => null,
                 'estado' => 'Identificada no registrada',
                 'pasajeros' => 1,
             ]

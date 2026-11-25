@@ -160,7 +160,9 @@
             </td>
 
             <td class="py-3 px-4 text-slate-600">
-              {{ u.tiene_password ? 'Google OAuth + Clave' : 'Solo Google OAuth' }}
+              <span class="px-2 py-0.5 text-[10px] rounded font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                Exclusivo Google OAuth 2.0
+              </span>
             </td>
 
             <td class="py-3 px-4">
@@ -263,19 +265,6 @@
             </div>
           </div>
 
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">
-              Contraseña {{ form.id ? '(opcional, dejar vacío para mantener)' : '(opcional)' }}
-            </label>
-            <input
-              v-model="form.password"
-              type="password"
-              minlength="6"
-              placeholder="Opcional — dejar vacío para acceso solo con Google"
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
-            />
-          </div>
-
           <div class="flex justify-end gap-2.5 mt-5 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -314,7 +303,7 @@ const filtros = ref({ q: '', rol: '', activo: '' })
 const cargando = ref(false)
 const modalVisible = ref(false)
 const guardando = ref(false)
-const form = ref({ id: null, nombre: '', email_google: '', rol: 'operador', activo: true, password: '' })
+const form = ref({ id: null, nombre: '', email_google: '', rol: 'operador', activo: true })
 
 const iosDialog = useIosDialog()
 
@@ -361,7 +350,7 @@ async function cargar() {
 }
 
 function abrirModalCrear() {
-  form.value = { id: null, nombre: '', email_google: '', rol: 'operador', activo: true, password: '' }
+  form.value = { id: null, nombre: '', email_google: '', rol: 'operador', activo: true }
   modalVisible.value = true
 }
 
@@ -372,7 +361,6 @@ function editar(u) {
     email_google: u.email_google,
     rol: u.rol,
     activo: Boolean(u.activo),
-    password: '',
   }
   modalVisible.value = true
 }
@@ -385,9 +373,6 @@ async function guardar() {
       email_google: form.value.email_google.trim().toLowerCase(),
       rol: form.value.rol,
       activo: Boolean(form.value.activo),
-    }
-    if (form.value.password && form.value.password.trim().length > 0) {
-      payload.password = form.value.password.trim()
     }
 
     if (form.value.id) {

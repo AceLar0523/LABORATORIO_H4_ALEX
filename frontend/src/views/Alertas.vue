@@ -42,6 +42,14 @@
         </div>
       </div>
     </div>
+
+    <div v-if="ultimaPagina > 1" class="flex items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-600 shadow-xs">
+      <span>Página {{ paginaActual }} de {{ ultimaPagina }} ({{ totalRegistros }} alertas)</span>
+      <div class="flex items-center gap-2">
+        <button @click="cargarAlertas(paginaActual - 1)" :disabled="paginaActual <= 1" class="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer font-semibold">Anterior</button>
+        <button @click="cargarAlertas(paginaActual + 1)" :disabled="paginaActual >= ultimaPagina" class="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer font-semibold">Siguiente</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -51,11 +59,18 @@ import { toast } from 'vue-sonner'
 import api from '../services/api'
 
 const alertas = ref([])
+const paginaActual = ref(1)
+const ultimaPagina = ref(1)
+const totalRegistros = ref(0)
 
-async function cargarAlertas() {
+async function cargarAlertas(page = paginaActual.value) {
+  if (page < 1) return
   try {
-    const res = await api.get('/alertas')
+    const res = await api.get('/alertas', { params: { page } })
     alertas.value = res.data.data || []
+    paginaActual.value = res.data.current_page ?? 1
+    ultimaPagina.value = res.data.last_page ?? 1
+    totalRegistros.value = res.data.total ?? alertas.value.length
   } catch (err) {
     console.error(err)
     toast.error('Error al obtener alertas')
@@ -68,7 +83,7 @@ async function atender(id) {
     toast.success('Alerta resuelta', {
       description: 'El incidente fue marcado como atendido por el operador',
     })
-    cargarAlertas()
+    cargarAlertas(paginaActual.value)
   } catch (err) {
     toast.error('No se pudo marcar la alerta', {
       description: err.response?.data?.message || err.message,
@@ -76,5 +91,5 @@ async function atender(id) {
   }
 }
 
-onMounted(cargarAlertas)
+onMounted(() => cargarAlertas(1))
 </script>

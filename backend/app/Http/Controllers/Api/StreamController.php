@@ -6,17 +6,28 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Paso;
 use App\Models\Alerta;
+use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StreamController extends Controller
 {
     /**
      * GET /api/v1/stream/eventos
-     * SSE no bloqueante para entorno de desarrollo y producción.
-     * Cierra la sesión activa de PHP si existiera para liberar el worker inmediatamente.
+     * SSE autenticado (Bearer o query ?token=) con soporte de Last-Event-ID.
      */
     public function stream(Request $request)
     {
+        $rawToken = $request->bearerToken() ?: (string) $request->query('token', '');
+        $tokenModel = $rawToken !== '' ? PersonalAccessToken::findToken($rawToken) : null;
+        $usuario = $tokenModel?->tokenable;
+
+        if (!$usuario || !$usuario->activo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No autenticado. Se requiere token válido para el stream en tiempo real.',
+            ], 401);
+        }
+
         // Liberar sesión de PHP para que no bloquee otras peticiones HTTP concurrentes
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
@@ -28,21 +39,33 @@ class StreamController extends Controller
         @ini_set('zlib.output_compression', '0');
         @ini_set('implicit_flush', '1');
 
-        $response = new StreamedResponse(function () use ($request) {
-            $lastPasoId = (int)$request->query('last_paso_id', 0);
-            $lastAlertaId = (int)$request->query('last_alerta_id', 0);
+        $once = $request->boolean('once');
 
-            if ($lastPasoId === 0) {
-                $lastPasoId = (int)(Paso::max('id') ?? 0);
+        $response = new StreamedResponse(function () use ($request, $once) {
+            $flushStream = function () use ($once): void {
+                if (!$once) {
+                    if (ob_get_level() > 0) {
+                        @ob_flush();
+                    }
+                    flush();
+                }
+            };
+
+            $lastEventId = (int) $request->header('Last-Event-ID', 0);
+            $lastPasoId = max($lastEventId, (int) $request->query('last_paso_id', 0));
+            $lastAlertaId = (int) $request->query('last_alerta_id', 0);
+
+            if ($lastPasoId === 0 && !$request->has('last_paso_id') && $lastEventId === 0) {
+                $lastPasoId = (int) (Paso::max('id') ?? 0);
             }
-            if ($lastAlertaId === 0) {
-                $lastAlertaId = (int)(Alerta::max('id') ?? 0);
+            if ($lastAlertaId === 0 && !$request->has('last_alerta_id')) {
+                $lastAlertaId = (int) (Alerta::max('id') ?? 0);
             }
 
             $startTime = time();
 
             // Duración máxima de 15 segundos por conexión SSE para liberar sockets periódicamente
-            while (time() - $startTime < 15) {
+            do {
                 $nuevosPasos = Paso::with(['caseta', 'alertas'])
                     ->where('id', '>', $lastPasoId)
                     ->orderBy('id', 'asc')
@@ -50,14 +73,12 @@ class StreamController extends Controller
 
                 if ($nuevosPasos->isNotEmpty()) {
                     foreach ($nuevosPasos as $paso) {
+                        echo "id: {$paso->id}\n";
                         echo "event: nuevo_paso\n";
                         echo 'data: ' . json_encode($paso) . "\n\n";
                         $lastPasoId = max($lastPasoId, $paso->id);
                     }
-                    while (ob_get_level() > 0) {
-                        ob_end_flush();
-                    }
-                    flush();
+                    $flushStream();
                 }
 
                 $nuevasAlertas = Alerta::with('paso')
@@ -71,21 +92,19 @@ class StreamController extends Controller
                         echo 'data: ' . json_encode($alerta) . "\n\n";
                         $lastAlertaId = max($lastAlertaId, $alerta->id);
                     }
-                    while (ob_get_level() > 0) {
-                        ob_end_flush();
-                    }
-                    flush();
+                    $flushStream();
                 }
 
                 echo ": ping\n\n";
-                while (ob_get_level() > 0) {
-                    ob_end_flush();
+                $flushStream();
+
+                if ($once) {
+                    break;
                 }
-                flush();
 
                 // 1 segundo de intervalo para no saturar el pooler de Supabase
                 sleep(1);
-            }
+            } while (time() - $startTime < 15);
         });
 
         $response->headers->set('Content-Type', 'text/event-stream');

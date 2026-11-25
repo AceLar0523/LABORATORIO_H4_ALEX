@@ -79,11 +79,23 @@ El servicio FastAPI expone un endpoint unificado `/predict` para procesar la evi
 
 | Tarea | Modelo | Latencia Promedio (RunPod GPU) |
 | :--- | :--- | :--- |
-| Detección de Placa | YOLOv9-t ONNX | ~14 ms |
-| OCR de Placa | CCT Transformer ONNX | ~7 ms |
-| Segmentación Vehículo | YOLO11s-seg PyTorch | ~21 ms |
-| Keypoints de Ruedas | YOLO11s-pose PyTorch | ~19 ms |
-| **Total Pipeline Visión** | **Unificado en `/predict`** | **~61 ms** |
+| Detección de Placa | YOLOv9-t ONNX | `[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]` |
+| OCR de Placa | CCT Transformer ONNX | `[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]` |
+| Segmentación Vehículo | YOLO11s-seg PyTorch | `[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]` |
+| Keypoints de Ruedas | YOLO11s-pose PyTorch | `[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]` |
+| Segmentación Pasajeros (M4) | YOLO11s-seg PyTorch | `[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]` |
+| **Total Pipeline Visión** | **Unificado en `/predict`** | **`[COMPLETAR CON MEDICIÓN REAL EN RUNPOD]`** |
+
+### Datasets (Roboflow) y Métricas de Entrenamiento (Google Colab)
+
+> **Nota para entrega final:** Reemplazar los marcadores `[COMPLETAR CON MÉTRICAS REALES DE COLAB]` con los valores exactos obtenidos en los notebooks de `/entrenamiento` antes de exportar este informe a PDF.
+
+| Modelo | Dataset (Roboflow) | Imágenes / Clases | Aumentaciones Aplicadas | Métricas de Validación |
+| :--- | :--- | :--- | :--- | :--- |
+| **M1 + OCR** | Modelo previo de placas + `fast-plate-ocr` | `[COMPLETAR: N imágenes validación]` | N/A (evaluación directa) | Precisión OCR: `[COMPLETAR %]` |
+| **M2 (Segmentación)** | `peaje-vehiculos-seg` (Roboflow Universe + propias) | `[COMPLETAR: total imágenes]` / 6 clases (`moto`, `auto`, `minibus`, `bus`, `camion`, `trailer`) | `[COMPLETAR: flip, brillo, rotación, etc.]` | `mAP@50`: `[COMPLETAR]` · `mAP@50-95`: `[COMPLETAR]` |
+| **M3 (Keypoints Ruedas)** | `peaje-llantas-pose` (Roboflow Universe + propias) | `[COMPLETAR: total imágenes]` / keypoints de ruedas | `[COMPLETAR: flip, escala, blur, etc.]` | `mAP@50 (pose)`: `[COMPLETAR]` · Error conteo ejes (MAE): `[COMPLETAR]` |
+| **M4 (Pasajeros - +5 pts)** | Segmentación de ocupantes en cabina (`m4_pasajeros_seg.pt`) | `[COMPLETAR: imágenes evaluación]` / clase `person` | `[COMPLETAR si aplica]` | `mAP@50 (mask)` / Precisión conteo: `[COMPLETAR]` |
 
 ---
 

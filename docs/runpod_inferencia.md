@@ -125,7 +125,8 @@ En el archivo `backend/.env` de tu proyecto Laravel, actualiza las variables de 
 
 ```env
 INFERENCE_URL=https://<POD_ID>-8000.proxy.runpod.net
-OLLAMA_URL=https://<POD_ID>-8000.proxy.runpod.net/ollama/generate
+OLLAMA_URL=https://<POD_ID>-8000.proxy.runpod.net/ollama
+OLLAMA_MODEL=llama3.2:3b
 ```
 *(Si expusiste el puerto `11434` directamente, también puedes usar `https://<POD_ID>-11434.proxy.runpod.net` para Ollama).*
 

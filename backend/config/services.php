@@ -35,4 +35,19 @@ return [
         ],
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID', ''),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET', ''),
+        'android_client_id' => env('GOOGLE_ANDROID_CLIENT_ID', ''),
+    ],
+
+    'inference' => [
+        'url' => rtrim((string) env('INFERENCE_URL', ''), '/'),
+    ],
+
+    'ollama' => [
+        'url' => rtrim((string) env('OLLAMA_URL', ''), '/'),
+        'model' => env('OLLAMA_MODEL', 'llama3.2:3b'),
+    ],
+
 ];

@@ -6,6 +6,7 @@ import Alertas from '../views/Alertas.vue'
 import ChatAgente from '../views/ChatAgente.vue'
 import EstadoInferencia from '../views/EstadoInferencia.vue'
 import Usuarios from '../views/Usuarios.vue'
+import TarifasCasetas from '../views/TarifasCasetas.vue'
 import Login from '../views/Login.vue'
 
 const routes = [
@@ -14,6 +15,7 @@ const routes = [
   { path: '/vehiculos', name: 'Vehiculos', component: Vehiculos, meta: { requiresAuth: true } },
   { path: '/pasos', name: 'Pasos', component: Pasos, meta: { requiresAuth: true } },
   { path: '/alertas', name: 'Alertas', component: Alertas, meta: { requiresAuth: true } },
+  { path: '/tarifas-casetas', name: 'TarifasCasetas', component: TarifasCasetas, meta: { requiresAuth: true } },
   { path: '/usuarios', name: 'Usuarios', component: Usuarios, meta: { requiresAuth: true } },
   { path: '/chat', name: 'Chat', component: ChatAgente, meta: { requiresAuth: true } },
   { path: '/estado', name: 'Estado', component: EstadoInferencia, meta: { requiresAuth: true } },

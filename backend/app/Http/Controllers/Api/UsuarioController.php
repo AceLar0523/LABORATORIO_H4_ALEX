@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 
 class UsuarioController extends Controller
 {
@@ -28,7 +27,6 @@ class UsuarioController extends Controller
             'email_google' => $u->email_google,
             'rol' => $u->rol,
             'activo' => (bool) $u->activo,
-            'tiene_password' => !empty($u->password),
             'created_at' => $u->created_at,
             'updated_at' => $u->updated_at,
         ];
@@ -85,7 +83,6 @@ class UsuarioController extends Controller
             'email_google' => 'required|email|max:180',
             'rol' => 'required|in:administrador,operador',
             'activo' => 'nullable|boolean',
-            'password' => 'nullable|string|min:6|max:100',
         ]);
 
         $email = strtolower(trim($validated['email_google']));
@@ -101,7 +98,7 @@ class UsuarioController extends Controller
             'email_google' => $email,
             'rol' => $validated['rol'],
             'activo' => array_key_exists('activo', $validated) ? (bool) $validated['activo'] : true,
-            'password' => !empty($validated['password']) ? Hash::make($validated['password']) : null,
+            'password' => null,
         ]);
 
         return response()->json([
@@ -121,7 +118,6 @@ class UsuarioController extends Controller
             'email_google' => 'required|email|max:180',
             'rol' => 'required|in:administrador,operador',
             'activo' => 'nullable|boolean',
-            'password' => 'nullable|string|min:6|max:100',
         ]);
 
         $email = strtolower(trim($validated['email_google']));
@@ -150,10 +146,7 @@ class UsuarioController extends Controller
         $user->email_google = $email;
         $user->rol = $nuevoRol;
         $user->activo = $nuevoActivo;
-
-        if (!empty($validated['password'])) {
-            $user->password = Hash::make($validated['password']);
-        }
+        $user->password = null;
 
         $user->save();
 

@@ -132,6 +132,32 @@
         "method": "GET",
         "url": "{{baseUrl}}/tarifas"
       }
+    },
+    {
+      "name": "14. Crear Tarifa (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"categoria\": \"trailer\",\n  \"ejes\": 6,\n  \"monto\": 85.00\n}"
+        },
+        "url": "{{baseUrl}}/tarifas"
+      }
+    },
+    {
+      "name": "15. Listar Casetas",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/casetas"
+      }
+    },
+    {
+      "name": "16. Stream SSE Tiempo Real (Autenticado)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/stream/eventos?token={{token}}"
+      }
     }
   ]
 }

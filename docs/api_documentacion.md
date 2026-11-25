@@ -1,26 +1,29 @@
 # Documentación de la API REST - Sistema Inteligente de Control de Peaje
 
 **Versión de la API:** `v1`  
-**Base URL Producción:** `https://peaje.tudominio.com/api/v1`  
-**Base URL Local / Pruebas:** `http://localhost:8000/api/v1`  
+**Base URL Producción:** `https://peaje.tudominio.com/api/v1` *(reemplazar por tu subdominio HTTPS final)*  
 **Formato de Intercambio:** `JSON` (peticiones y respuestas)  
-**Mecanismo de Autenticación:** `Bearer Token` (Laravel Sanctum) obtenido tras validar con Google OAuth 2.0.
+**Mecanismo de Autenticación:** `Bearer Token` (Laravel Sanctum) obtenido tras validar el `id_token` de Google OAuth 2.0 contra Google y la lista blanca en BD.
 
 ---
 
 ## 1. Autenticación (Google OAuth 2.0)
 
+### Obtener Configuración Pública de Google OAuth
+* **Método:** `GET`
+* **Ruta:** `/auth/config`
+* **Acceso:** Público.
+* **Descripción:** Devuelve `google_client_id`, `google_android_client_id` y `google_oauth_enabled`.
+
 ### Iniciar Sesión con Google
 * **Método:** `POST`
 * **Ruta:** `/auth/google`
-* **Acceso:** Público (única ruta pública del sistema).
-* **Descripción:** Recibe el token emitido por Google Sign-In desde la aplicación web o móvil, valida el correo contra la **lista blanca** en la base de datos y genera el token de sesión.
+* **Acceso:** Público (única ruta de autenticación del sistema).
+* **Descripción:** Recibe el `id_token` JWT emitido por Google Sign-In desde la aplicación web o móvil, lo verifica contra Google (`tokeninfo`), valida el correo contra la **lista blanca** en la base de datos y genera el token de sesión Sanctum.
 
 #### Cuerpo de la Petición (Request Body)
 ```json
 {
-  "email": "docente@peaje.edu",
-  "name": "Docente Evaluador",
   "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI..."
 }
 ```
@@ -209,16 +212,24 @@
 
 ---
 
-## 6. Monitoreo y Tiempo Real
+## 6. Monitoreo, Administración (Rol Administrador) y Tiempo Real
 
 ### Servidor de Eventos en Tiempo Real (SSE)
 * **Método:** `GET`
-* **Ruta:** `/stream/eventos`
+* **Ruta:** `/stream/eventos?token={BEARER_TOKEN}`
+* **Autenticación:** Requerida (`Bearer Token` en cabecera o query `token`, compatible con `EventSource`). Soporta `Last-Event-ID`.
 * **Content-Type:** `text/event-stream`
 * **Descripción:** Transmite en tiempo real eventos `nuevo_paso` y `nueva_alerta` al panel web sin recarga.
+
+### Gestión de Vehículos, Tarifas, Casetas y Usuarios (Solo Administrador)
+* `GET /vehiculos`, `POST /vehiculos`, `PUT /vehiculos/{id}`, `DELETE /vehiculos/{id}` (mutaciones restringidas a `rol=administrador`).
+* `GET /tarifas`, `POST /tarifas`, `PUT /tarifas/{id}`, `DELETE /tarifas/{id}` (mutaciones restringidas a `rol=administrador`).
+* `GET /casetas`, `POST /casetas`, `PUT /casetas/{id}`, `DELETE /casetas/{id}` (mutaciones restringidas a `rol=administrador`).
+* `GET /usuarios`, `POST /usuarios`, `PUT /usuarios/{id}`, `PATCH /usuarios/{id}/estado`, `DELETE /usuarios/{id}` (mutaciones restringidas a `rol=administrador`).
 
 ### Estado de Conectividad con la Inferencia
 * **Método:** `GET`
 * **Ruta:** `/estado/inferencia`
-* **Respuesta:** Verifica si el endpoint en RunPod / Colab responde, indicando latencia del ping y salud de los 3 modelos.
+* **Autenticación:** Requerida (`Bearer Token`).
+* **Respuesta:** Verifica si el endpoint en RunPod / Colab y Ollama responden, indicando latencia del ping y salud de los modelos M1, M2, M3, M4 y LLM.
 

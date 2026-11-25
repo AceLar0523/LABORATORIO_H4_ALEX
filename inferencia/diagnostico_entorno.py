@@ -36,7 +36,7 @@ def main() -> None:
     except Exception as exc:
         print(f"PyTorch error     : {exc}")
 
-    for pkg in ["ultralytics", "onnxruntime", "onnxruntime-gpu", "fast-plate-ocr", "opencv-python", "fastapi", "uvicorn"]:
+    for pkg in ["ultralytics", "onnxruntime", "onnxruntime-gpu", "fast-plate-ocr", "opencv-python", "opencv-python-headless", "fastapi", "uvicorn"]:
         print(f"{pkg:<18}: {get_pkg_version(pkg)}")
 
     if shutil.which("ollama"):

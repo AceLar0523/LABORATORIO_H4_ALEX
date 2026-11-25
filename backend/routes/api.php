@@ -53,9 +53,15 @@ Route::prefix('v1')->group(function () {
         Route::get('/panel/resumen', [PasoController::class, 'resumenGeneral']);
         Route::apiResource('/vehiculos', VehiculoController::class);
         Route::get('/casetas', [CasetaController::class, 'index']);
+        Route::post('/casetas', [CasetaController::class, 'storeCaseta']);
+        Route::put('/casetas/{id}', [CasetaController::class, 'updateCaseta']);
+        Route::delete('/casetas/{id}', [CasetaController::class, 'destroyCaseta']);
         Route::get('/alertas', [CasetaController::class, 'alertas']);
         Route::patch('/alertas/{id}/atender', [CasetaController::class, 'atenderAlerta']);
         Route::get('/tarifas', [CasetaController::class, 'tarifas']);
+        Route::post('/tarifas', [CasetaController::class, 'storeTarifa']);
+        Route::put('/tarifas/{id}', [CasetaController::class, 'updateTarifa']);
+        Route::delete('/tarifas/{id}', [CasetaController::class, 'destroyTarifa']);
         Route::get('/estado/inferencia', [CasetaController::class, 'estadoInferencia']);
 
         // Gestión de Usuarios y Lista Blanca Google OAuth

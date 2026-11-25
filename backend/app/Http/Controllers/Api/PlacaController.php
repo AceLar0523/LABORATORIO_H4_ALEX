@@ -20,33 +20,63 @@ class PlacaController extends Controller
     }
 
     /**
+     * Forma canónica para comparar confusiones típicas de OCR: O↔0, I↔1, B↔8, S↔5
+     */
+    private static function canonicaOcr(string $placa): string
+    {
+        return strtr(strtoupper($placa), [
+            'O' => '0',
+            'I' => '1',
+            'B' => '8',
+            'S' => '5',
+        ]);
+    }
+
+    /**
      * Sugerir placas parecidas corrigiendo confusiones típicas de OCR:
      * O <-> 0, I <-> 1, B <-> 8, S <-> 5
      */
     public static function buscarSugerencias($placa)
     {
-        $placasExistentes = Vehiculo::pluck('placa')->toArray();
-        $sugerencias = [];
+        $placaNorm = self::normalizar($placa);
+        if ($placaNorm === '') {
+            return [];
+        }
 
-        // Generar variantes con sustitución de caracteres confusos
-        $confusiones = [
-            'O' => ['0'], '0' => ['O'],
-            'I' => ['1'], '1' => ['I'],
-            'B' => ['8'], '8' => ['B'],
-            'S' => ['5'], '5' => ['S'],
-        ];
+        $canonQuery = self::canonicaOcr($placaNorm);
 
-        foreach ($placasExistentes as $target) {
-            if ($target === $placa) continue;
+        $candidatos = collect()
+            ->merge(Vehiculo::pluck('placa'))
+            ->merge(
+                Paso::whereNotNull('placa_normalizada')
+                    ->distinct()
+                    ->pluck('placa_normalizada')
+            )
+            ->map(fn ($p) => self::normalizar($p))
+            ->filter(fn ($p) => $p !== '' && $p !== 'SINPLACA' && $p !== $placaNorm)
+            ->unique()
+            ->values();
 
-            // Distancia de Levenshtein simple
-            $dist = levenshtein($placa, $target);
-            if ($dist <= 2) {
-                $sugerencias[] = $target;
+        $exactasOcr = [];
+        $cercanas = [];
+
+        foreach ($candidatos as $target) {
+            if (self::canonicaOcr($target) === $canonQuery) {
+                $exactasOcr[] = $target;
+                continue;
+            }
+
+            $distCanon = levenshtein($canonQuery, self::canonicaOcr($target));
+            $distRaw = levenshtein($placaNorm, $target);
+            if ($distCanon <= 1 || $distRaw <= 2) {
+                $cercanas[] = ['placa' => $target, 'dist' => min($distCanon, $distRaw)];
             }
         }
 
-        return array_unique($sugerencias);
+        usort($cercanas, fn ($a, $b) => $a['dist'] <=> $b['dist']);
+        $sugerencias = array_merge($exactasOcr, array_column($cercanas, 'placa'));
+
+        return array_slice(array_values(array_unique($sugerencias)), 0, 5);
     }
 
     /**
@@ -147,7 +177,13 @@ class PlacaController extends Controller
             'imagen_base64' => 'nullable|string',
         ]);
 
-        $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://127.0.0.1:8000'), '/');
+        $inferenceUrl = rtrim((string) config('services.inference.url', ''), '/');
+        if ($inferenceUrl === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'INFERENCE_URL no está configurado en el servidor.',
+            ], 503);
+        }
         $imageData = null;
         $imageExtension = 'jpg';
 

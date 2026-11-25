@@ -14,9 +14,71 @@ use Illuminate\Support\Facades\Http;
 
 class CasetaController extends Controller
 {
+    private function autorizarAdmin(Request $request): void
+    {
+        $usuario = $request->user();
+        if (!$usuario || $usuario->rol !== 'administrador') {
+            abort(response()->json([
+                'success' => false,
+                'message' => 'Se requieren permisos de administrador para gestionar casetas y tarifas.',
+            ], 403));
+        }
+    }
+
     public function index()
     {
-        return response()->json(Caseta::all());
+        return response()->json(Caseta::orderBy('id')->get());
+    }
+
+    public function storeCaseta(Request $request)
+    {
+        $this->autorizarAdmin($request);
+
+        $validated = $request->validate([
+            'nombre' => 'required|string|max:120',
+            'ubicacion' => 'required|string|max:200',
+        ]);
+
+        $caseta = Caseta::create([
+            'nombre' => trim($validated['nombre']),
+            'ubicacion' => trim($validated['ubicacion']),
+        ]);
+
+        return response()->json(['success' => true, 'data' => $caseta], 201);
+    }
+
+    public function updateCaseta(Request $request, $id)
+    {
+        $this->autorizarAdmin($request);
+        $caseta = Caseta::findOrFail($id);
+
+        $validated = $request->validate([
+            'nombre' => 'required|string|max:120',
+            'ubicacion' => 'required|string|max:200',
+        ]);
+
+        $caseta->update([
+            'nombre' => trim($validated['nombre']),
+            'ubicacion' => trim($validated['ubicacion']),
+        ]);
+
+        return response()->json(['success' => true, 'data' => $caseta]);
+    }
+
+    public function destroyCaseta(Request $request, $id)
+    {
+        $this->autorizarAdmin($request);
+        $caseta = Caseta::findOrFail($id);
+
+        if (Caseta::count() <= 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No puedes eliminar la última caseta del sistema.',
+            ], 422);
+        }
+
+        $caseta->delete();
+        return response()->json(['success' => true, 'message' => 'Caseta eliminada con éxito']);
     }
 
     /**
@@ -43,50 +105,54 @@ class CasetaController extends Controller
     /**
      * GET /api/v1/estado/inferencia
      * Verificación REAL y DINÁMICA de cada componente:
-     * - Motor FastAPI (M1, M2, M3)
+     * - Motor FastAPI (M1, M2, M3, M4)
      * - Ollama LLM
      */
     public function estadoInferencia()
     {
-        $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://127.0.0.1:8000'), '/');
-        $ollamaUrl = rtrim(env('OLLAMA_URL', 'http://127.0.0.1:11434'), '/');
+        $inferenceUrl = rtrim((string) config('services.inference.url', ''), '/');
+        $ollamaUrl = rtrim((string) config('services.ollama.url', ''), '/');
 
         $t0 = microtime(true);
         $statusInferencia = 'offline';
         $detallesModelos = null;
 
         // 1. Probar salud real del motor FastAPI (timeout tolerante para RunPod HTTPS proxy)
-        try {
-            $resp = Http::timeout(5)->get($inferenceUrl . '/');
-            $data = $resp->json();
-            if ($resp->successful() && is_array($data) && isset($data['models'])) {
-                $statusInferencia = 'online';
-                $detallesModelos = $data;
+        if ($inferenceUrl !== '') {
+            try {
+                $resp = Http::timeout(5)->get($inferenceUrl . '/');
+                $data = $resp->json();
+                if ($resp->successful() && is_array($data) && isset($data['models'])) {
+                    $statusInferencia = 'online';
+                    $detallesModelos = $data;
+                }
+            } catch (\Exception $e) {
+                $statusInferencia = 'offline';
             }
-        } catch (\Exception $e) {
-            $statusInferencia = 'offline';
         }
 
-        // 2. Probar salud real de Ollama LLM (directo, vía /ollama/tags o reporte de FastAPI)
-        $ollamaTagsUrl = str_ends_with($ollamaUrl, '/ollama')
-            ? "{$ollamaUrl}/tags"
-            : "{$ollamaUrl}/api/tags";
+        // 2. Probar salud real de Ollama LLM (directo o vía /ollama/tags)
         $statusOllama = 'offline';
         $ollamaModels = [];
-        try {
-            $respOllama = Http::timeout(4)->get($ollamaTagsUrl);
-            if ($respOllama->successful()) {
-                $tagsData = $respOllama->json();
-                $models = is_array($tagsData) ? ($tagsData['models'] ?? []) : [];
-                $ollamaModels = collect($models)
-                    ->map(fn ($m) => is_array($m) ? ($m['name'] ?? ($m['model'] ?? null)) : null)
-                    ->filter()
-                    ->values()
-                    ->all();
-                $statusOllama = count($ollamaModels) > 0 ? 'online' : 'sin_modelo';
+        if ($ollamaUrl !== '') {
+            $ollamaTagsUrl = str_ends_with($ollamaUrl, '/ollama')
+                ? "{$ollamaUrl}/tags"
+                : "{$ollamaUrl}/api/tags";
+            try {
+                $respOllama = Http::timeout(4)->get($ollamaTagsUrl);
+                if ($respOllama->successful()) {
+                    $tagsData = $respOllama->json();
+                    $models = is_array($tagsData) ? ($tagsData['models'] ?? []) : [];
+                    $ollamaModels = collect($models)
+                        ->map(fn ($m) => is_array($m) ? ($m['name'] ?? ($m['model'] ?? null)) : null)
+                        ->filter()
+                        ->values()
+                        ->all();
+                    $statusOllama = count($ollamaModels) > 0 ? 'online' : 'sin_modelo';
+                }
+            } catch (\Exception $e) {
+                $statusOllama = 'offline';
             }
-        } catch (\Exception $e) {
-            $statusOllama = 'offline';
         }
 
         if ($statusOllama === 'offline' && !empty($detallesModelos['ollama_online'])) {
@@ -95,11 +161,9 @@ class CasetaController extends Controller
 
         $latency = round((microtime(true) - $t0) * 1000, 2);
 
-        $isOnline = ($statusInferencia === 'online');
-
         return response()->json([
             'status' => $statusInferencia,
-            'url' => $inferenceUrl,
+            'url' => $inferenceUrl !== '' ? $inferenceUrl : 'No configurado',
             'latencia_ms' => $latency,
             'modelos' => [
                 'm1_detector' => $detallesModelos['models']['m1_detector'] ?? false,
@@ -111,7 +175,7 @@ class CasetaController extends Controller
             ],
             'ollama_status' => $statusOllama,
             'ollama_models' => $ollamaModels,
-            'ollama_url' => $ollamaUrl,
+            'ollama_url' => $ollamaUrl !== '' ? $ollamaUrl : 'No configurado',
             'vehiculos_registrados' => Vehiculo::count(),
             'usuarios_autorizados' => User::where('activo', true)->count(),
             'detalles' => $detallesModelos,
@@ -123,8 +187,8 @@ class CasetaController extends Controller
      */
     public function alertas(Request $request)
     {
-        $query = Alerta::with('paso')->orderBy('created_at', 'desc');
-        if ($request->has('atendida')) {
+        $query = Alerta::with('paso')->orderBy('created_at', 'desc')->orderBy('id', 'desc');
+        if ($request->has('atendida') && $request->input('atendida') !== '') {
             $query->where('atendida', filter_var($request->input('atendida'), FILTER_VALIDATE_BOOLEAN));
         }
         return response()->json($query->paginate(20));
@@ -138,10 +202,82 @@ class CasetaController extends Controller
     }
 
     /**
-     * Listado de Tarifas
+     * Listado y gestión de Tarifas
      */
     public function tarifas()
     {
         return response()->json(Tarifa::orderBy('categoria')->orderBy('ejes')->get());
+    }
+
+    public function storeTarifa(Request $request)
+    {
+        $this->autorizarAdmin($request);
+
+        $validated = $request->validate([
+            'categoria' => 'required|string|max:30',
+            'ejes' => 'required|integer|min:1|max:12',
+            'monto' => 'required|numeric|min:0',
+        ]);
+
+        $categoria = strtolower(trim($validated['categoria']));
+        $ejes = (int) $validated['ejes'];
+
+        if (Tarifa::where('categoria', $categoria)->where('ejes', $ejes)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => "Ya existe una tarifa para {$categoria} con {$ejes} ejes.",
+            ], 422);
+        }
+
+        $tarifa = Tarifa::create([
+            'categoria' => $categoria,
+            'ejes' => $ejes,
+            'monto' => $validated['monto'],
+        ]);
+
+        return response()->json(['success' => true, 'data' => $tarifa], 201);
+    }
+
+    public function updateTarifa(Request $request, $id)
+    {
+        $this->autorizarAdmin($request);
+        $tarifa = Tarifa::findOrFail($id);
+
+        $validated = $request->validate([
+            'categoria' => 'required|string|max:30',
+            'ejes' => 'required|integer|min:1|max:12',
+            'monto' => 'required|numeric|min:0',
+        ]);
+
+        $categoria = strtolower(trim($validated['categoria']));
+        $ejes = (int) $validated['ejes'];
+
+        $duplicada = Tarifa::where('categoria', $categoria)
+            ->where('ejes', $ejes)
+            ->where('id', '!=', $tarifa->id)
+            ->exists();
+
+        if ($duplicada) {
+            return response()->json([
+                'success' => false,
+                'message' => "Ya existe otra tarifa para {$categoria} con {$ejes} ejes.",
+            ], 422);
+        }
+
+        $tarifa->update([
+            'categoria' => $categoria,
+            'ejes' => $ejes,
+            'monto' => $validated['monto'],
+        ]);
+
+        return response()->json(['success' => true, 'data' => $tarifa]);
+    }
+
+    public function destroyTarifa(Request $request, $id)
+    {
+        $this->autorizarAdmin($request);
+        $tarifa = Tarifa::findOrFail($id);
+        $tarifa->delete();
+        return response()->json(['success' => true, 'message' => 'Tarifa eliminada con éxito']);
     }
 }

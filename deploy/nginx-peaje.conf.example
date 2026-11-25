@@ -1,0 +1,57 @@
+# Plantilla Nginx para Producción en Subdominio HTTPS Único
+# Combina Frontend SPA (Vue 3 dist/) + Backend API REST / SSE (Laravel public/)
+
+server {
+    listen 80;
+    server_name peaje.tudominio.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name peaje.tudominio.com;
+
+    ssl_certificate     /etc/letsencrypt/live/peaje.tudominio.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/peaje.tudominio.com/privkey.pem;
+
+    client_max_body_size 25M;
+
+    # Frontend SPA compilado (frontend/dist)
+    root /var/www/peaje-inteligente/frontend/dist;
+    index index.html;
+
+    # Evidencias almacenadas en Laravel (backend/storage/app/public)
+    location ^~ /storage/ {
+        alias /var/www/peaje-inteligente/backend/storage/app/public/;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Stream SSE en tiempo real (requiere desactivar buffering)
+    location = /api/v1/stream/eventos {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME /var/www/peaje-inteligente/backend/public/index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_buffering off;
+        fastcgi_cache off;
+        fastcgi_read_timeout 60s;
+        add_header X-Accel-Buffering no;
+    }
+
+    # Rutas API REST hacia Laravel (backend/public/index.php)
+    location ^~ /api {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME /var/www/peaje-inteligente/backend/public/index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_read_timeout 120s;
+    }
+
+    # Fallback SPA Vue Router
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+

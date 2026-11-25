@@ -166,11 +166,12 @@ class AgenteController extends Controller
                 'Registrada y con paso' => "**Registrada y con paso** ({$item['total_pasos']} paso(s) | Propietario: {$item['propietario']} | Saldo: Bs. " . number_format((float) $item['saldo'], 2) . ')',
                 'Registrada sin paso' => "**Registrada sin paso** (Propietario: {$item['propietario']} | Saldo: Bs. " . number_format((float) $item['saldo'], 2) . ')',
                 'Identificada no registrada' => '**Identificada no registrada** (sin alta en padrón vehicular; requeriría alerta en caseta)',
+                'Placa no legible' => '**Placa no legible**: No se detectó una placa legible en esta imagen. Por favor sube otra fotografía más nítida o frontal de la placa, o escribe la placa en texto.',
                 default => '**No existe** (sin registros en padrón vehicular ni en historial de pasos)',
             };
 
             if (!empty($item['sugerencias'])) {
-                $detalleBd .= ' | Sugerencias similares: ' . implode(', ', $item['sugerencias']);
+                $detalleBd .= ' | ¿Quisiste decir: ' . implode(', ', $item['sugerencias']) . '?';
             }
 
             if (!empty($item['saldo_insuficiente'])) {
@@ -243,7 +244,14 @@ class AgenteController extends Controller
      */
     private function analizarImagenEnRunPod(string $dataUri, int $indice): array
     {
-        $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://localhost:8000'), '/');
+        $inferenceUrl = rtrim((string) config('services.inference.url', ''), '/');
+        if ($inferenceUrl === '') {
+            return [
+                'indice' => $indice,
+                'exito' => false,
+                'error' => 'INFERENCE_URL no está configurado en el servidor.',
+            ];
+        }
 
         $extension = 'jpg';
         $base64Payload = $dataUri;
@@ -303,7 +311,7 @@ class AgenteController extends Controller
                 ?? Tarifa::where('categoria', $categoria)->first();
             $montoTarifa = $tarifa ? (float) $tarifa->monto : 10.00;
 
-            $estadoBd = 'No existe';
+            $estadoBd = 'Placa no legible';
             $vehiculo = null;
             $totalPasos = 0;
             $ultimoPaso = null;
@@ -378,10 +386,10 @@ class AgenteController extends Controller
                 'Identificada no registrada' => "**Placa `{$placaNorm}` — Identificada no registrada**\n" .
                     "• Registra {$res['total_pasos']} paso(s) detectado(s) sin estar dada de alta en el padrón vehicular.\n" .
                     "• Última detección: " . ($ultimo['fecha'] ?? 'N/D') . " en " . ($ultimo['caseta'] ?? 'Caseta General') . " (Bs. " . ($ultimo['monto'] ?? '0.00') . ")." .
-                    (!empty($res['sugerencias']) ? "\n• Similares en padrón: " . implode(', ', $res['sugerencias']) . '.' : ''),
+                    (!empty($res['sugerencias']) ? "\n• ¿Quisiste decir: " . implode(', ', $res['sugerencias']) . '?' : ''),
                 default => "**Placa `{$placaNorm}` — No existe**\n" .
                     "• No figura en vehículos registrados ni en historial de pasos." .
-                    (!empty($res['sugerencias']) ? ' Similares: ' . implode(', ', $res['sugerencias']) . '.' : ''),
+                    (!empty($res['sugerencias']) ? ' ¿Quisiste decir: ' . implode(', ', $res['sugerencias']) . '?' : ''),
             };
 
             $lineas[] = $texto;
@@ -718,8 +726,11 @@ class AgenteController extends Controller
      */
     private function llamarOllama(string $instruccion, string $contextoDatos, string $mensajeUsuario, array $historial): ?string
     {
-        $ollamaUrl = rtrim(env('OLLAMA_URL', 'http://localhost:11434'), '/');
-        $ollamaModel = env('OLLAMA_MODEL', 'llama3.2:3b');
+        $ollamaUrl = rtrim((string) config('services.ollama.url', ''), '/');
+        if ($ollamaUrl === '') {
+            return null;
+        }
+        $ollamaModel = (string) config('services.ollama.model', 'llama3.2:3b');
 
         $tagsUrl = str_ends_with($ollamaUrl, '/ollama') ? "{$ollamaUrl}/tags" : "{$ollamaUrl}/api/tags";
         $generateUrl = str_ends_with($ollamaUrl, '/ollama') ? "{$ollamaUrl}/generate" : "{$ollamaUrl}/api/generate";

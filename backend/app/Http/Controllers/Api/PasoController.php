@@ -35,7 +35,14 @@ class PasoController extends Controller
             'caseta_id' => 'nullable|exists:casetas,id',
         ]);
 
-        $inferenceUrl = rtrim(env('INFERENCE_URL', 'http://127.0.0.1:8000'), '/');
+        $inferenceUrl = rtrim((string) config('services.inference.url', ''), '/');
+        if ($inferenceUrl === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'INFERENCE_URL no está configurado en el servidor.',
+            ], 503);
+        }
+
         $casetaId = $request->input('caseta_id', 1);
         $usuario = $request->user();
 
@@ -115,7 +122,13 @@ class PasoController extends Controller
 
         if ($vehiculo) {
             $estado = 'Registrada y con paso';
-            if ($vehiculo->saldo < $monto) {
+            if (!$vehiculo->activo) {
+                $alertaGenerada = Alerta::create([
+                    'tipo' => 'vehiculo_inactivo',
+                    'mensaje' => "Vehículo {$vehiculo->placa} se encuentra suspendido/inactivo en el padrón.",
+                    'atendida' => false,
+                ]);
+            } elseif ($vehiculo->saldo < $monto) {
                 $alertaGenerada = Alerta::create([
                     'tipo' => 'sin_saldo',
                     'mensaje' => "Vehículo {$vehiculo->placa} pasó con saldo insuficiente (Saldo: {$vehiculo->saldo}, Tarifa: {$monto})",
@@ -161,27 +174,33 @@ class PasoController extends Controller
     }
 
     /**
-     * Resumen ultrarrápido optimizado en una sola consulta agregada
+     * Resumen optimizado para el panel en tiempo real (métricas de hoy + totales)
      */
     public function resumenGeneral()
     {
-        // 1. Obtener métricas agregadas en 1 sola consulta
-        $metrics = DB::selectOne("
-            SELECT 
-                COUNT(*) as total_pasos, 
-                COALESCE(SUM(monto), 0) as recaudacion_hoy 
-            FROM pasos
-        ");
+        $inicioHoy = now()->startOfDay();
+
+        $metricsTotal = DB::table('pasos')
+            ->selectRaw('COUNT(*) as total_pasos, COALESCE(SUM(monto), 0) as recaudacion_total')
+            ->first();
+
+        $metricsHoy = DB::table('pasos')
+            ->where('created_at', '>=', $inicioHoy)
+            ->selectRaw('COUNT(*) as pasos_hoy, COALESCE(SUM(monto), 0) as recaudacion_hoy')
+            ->first();
 
         $alertasPendientes = Alerta::where('atendida', false)->count();
+        $vehiculosRegistrados = Vehiculo::count();
 
-        // 2. Obtener últimos pasos y alertas
         $ultimosPasos = Paso::with(['caseta'])->orderBy('id', 'desc')->take(10)->get();
         $ultimasAlertas = Alerta::orderBy('id', 'desc')->take(10)->get();
 
         return response()->json([
-            'total_pasos' => (int)($metrics->total_pasos ?? 0),
-            'recaudacion_hoy' => round((float)($metrics->recaudacion_hoy ?? 0), 2),
+            'pasos_hoy' => (int) ($metricsHoy->pasos_hoy ?? 0),
+            'recaudacion_hoy' => round((float) ($metricsHoy->recaudacion_hoy ?? 0), 2),
+            'total_pasos' => (int) ($metricsTotal->total_pasos ?? 0),
+            'recaudacion_total' => round((float) ($metricsTotal->recaudacion_total ?? 0), 2),
+            'vehiculos_registrados' => $vehiculosRegistrados,
             'alertas_pendientes' => $alertasPendientes,
             'ultimos_pasos' => $ultimosPasos,
             'ultimas_alertas' => $ultimasAlertas,

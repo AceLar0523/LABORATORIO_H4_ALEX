@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,13 +16,6 @@ List<CameraDescription> gAvailableCameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb) {
-    try {
-      gAvailableCameras = await availableCameras();
-    } catch (_) {
-      gAvailableCameras = [];
-    }
-  }
   runApp(const PeajeMovilApp());
 }
 
@@ -286,9 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!_googleInitialized) {
         await GoogleSignIn.instance.initialize(
-          clientId: kIsWeb
-              ? (webClientId.isNotEmpty ? webClientId : null)
-              : (androidClientId.isNotEmpty ? androidClientId : null),
+          clientId: kIsWeb ? (webClientId.isNotEmpty ? webClientId : null) : null,
           serverClientId: (!kIsWeb && webClientId.isNotEmpty) ? webClientId : null,
         );
         _googleInitialized = true;
@@ -335,7 +328,10 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     } on GoogleSignInException catch (e) {
       setState(() {
-        _errorMessage = 'Inicio con Google cancelado o no disponible (${e.code.name}).';
+        final desc = (e.description ?? '').trim();
+        _errorMessage = desc.isNotEmpty
+            ? 'Error Google Sign-In (${e.code.name}): $desc'
+            : 'Inicio con Google cancelado o no disponible (${e.code.name}).';
       });
     } catch (e) {
       setState(() {
@@ -510,6 +506,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+                  if (_normalizedBaseUrl.startsWith('http://10.0.2.2') ||
+                      _normalizedBaseUrl.startsWith('http://localhost') ||
+                      _normalizedBaseUrl.startsWith('http://192.168.'))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: const Text(
+                          'Aviso: URL local detectada. Para producción/demostración configura tu subdominio HTTPS en ⚙.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF92400E), fontSize: 10.5),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -633,6 +648,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
 
   // Video Controller
   VideoPlayerController? _videoController;
+  final GlobalKey _videoBoundaryKey = GlobalKey();
   bool _isPlayingVideo = false;
 
   // Live Camera Controller & Scanner Timer
@@ -648,6 +664,14 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
   }
 
   Future<void> _initLiveCamera() async {
+    if (!kIsWeb && gAvailableCameras.isEmpty) {
+      try {
+        gAvailableCameras = await availableCameras();
+      } catch (e) {
+        debugPrint('Error consultando camaras: $e');
+        gAvailableCameras = [];
+      }
+    }
     if (gAvailableCameras.isNotEmpty) {
       final backCam = gAvailableCameras.firstWhere(
         (cam) => cam.lensDirection == CameraLensDirection.back,
@@ -686,8 +710,8 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
     });
 
     if (_isLiveScanning) {
-      // Iniciar temporizador cada 2.5 segundos para captura y reconocimiento en tiempo real
-      _liveScanTimer = Timer.periodic(const Duration(milliseconds: 2500), (timer) {
+      // Iniciar temporizador cada 500 ms (2 fps) para captura y reconocimiento en tiempo real sin saturar
+      _liveScanTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
         if (!_processing && _cameraController != null && _cameraController!.value.isInitialized) {
           _capturarFrameLive();
         }
@@ -768,9 +792,37 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_isPlayingVideo ? 'Video cargado en reproducción. Puedes pausar o sacar captura.' : 'Video listo.'),
+        content: Text(_isPlayingVideo ? 'Video cargado en reproducción. Usa "Analizar Frame del Video" para procesarlo.' : 'Video listo.'),
       ),
     );
+  }
+
+  Future<void> _capturarFrameDeVideo() async {
+    if (_processing || _videoController == null || !_videoController!.value.isInitialized) return;
+    try {
+      final renderObject = _videoBoundaryKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) {
+        throw Exception('El visor de video aún no está listo para captura.');
+      }
+      final ui.Image image = await renderObject.toImage(pixelRatio: 1.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        throw Exception('No se pudo codificar el frame del video.');
+      }
+      final bytes = byteData.buffer.asUint8List();
+      if (mounted) {
+        setState(() {
+          _capturedImageBytes = bytes;
+        });
+      }
+      await _enviarFrameAI(bytes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo capturar frame del video en este dispositivo ($e). Usa Cámara en Live o Foto.')),
+        );
+      }
+    }
   }
 
   Future<void> _enviarFrameAI(Uint8List bytes, {bool esLive = false}) async {
@@ -870,9 +922,12 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
                           }
                         });
                       },
-                      child: AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
+                      child: RepaintBoundary(
+                        key: _videoBoundaryKey,
+                        child: AspectRatio(
+                          aspectRatio: _videoController!.value.aspectRatio,
+                          child: VideoPlayer(_videoController!),
+                        ),
                       ),
                     )
                   // 3. Si hay foto capturada
@@ -1007,7 +1062,7 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
 
           const SizedBox(height: 8),
 
-          // Botón secundario: Cargar Video
+          // Botón secundario: Cargar Video y Analizar Frame
           OutlinedButton.icon(
             icon: const Icon(Icons.video_library_outlined, size: 18, color: Color(0xFF475569)),
             style: OutlinedButton.styleFrom(
@@ -1021,6 +1076,24 @@ class _ModoCasetaScreenState extends State<ModoCasetaScreen> {
               style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
             ),
           ),
+
+          if (_videoController != null && _videoController!.value.isInitialized) ...[
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.center_focus_strong_outlined, size: 18),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1D4ED8),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _processing ? null : _capturarFrameDeVideo,
+              label: const Text(
+                'Analizar Frame del Video',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
 
           // TARJETA DE RESULTADO DE DETECCIÓN IA
           if (_lastResult != null) ...[

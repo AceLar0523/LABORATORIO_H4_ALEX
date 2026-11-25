@@ -22,7 +22,7 @@
           <tr v-for="p in pasos" :key="p.id" class="hover:bg-slate-50/80 transition">
             <td class="py-2.5 px-4">
               <div class="w-12 h-9 rounded bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
-                <img v-if="p.imagen_url" :src="p.imagen_url" class="w-full h-full object-cover" />
+                <img v-if="resolveMediaUrl(p.imagen_url)" :src="resolveMediaUrl(p.imagen_url)" class="w-full h-full object-cover" />
                 <span v-else class="text-[9px] text-slate-400">Sin foto</span>
               </div>
             </td>
@@ -30,7 +30,10 @@
               <div class="font-mono font-bold text-slate-900">{{ p.placa_normalizada }}</div>
               <div class="text-[10px] text-slate-400">Leída: {{ p.placa_leida }} ({{ (p.confianza_ocr * 100).toFixed(0) }}%)</div>
             </td>
-            <td class="py-2.5 px-4 capitalize text-slate-700">{{ p.categoria_detectada }} ({{ p.ejes_detectados }} ejes)</td>
+            <td class="py-2.5 px-4 capitalize text-slate-700">
+              <div>{{ p.categoria_detectada }} ({{ p.ejes_detectados }} ejes)</div>
+              <div class="text-[10px] text-indigo-600 font-semibold">{{ p.pasajeros ?? 0 }} pasajero(s)</div>
+            </td>
             <td class="py-2.5 px-4">{{ p.caseta ? p.caseta.nombre : 'Caseta General' }}</td>
             <td class="py-2.5 px-4 font-semibold text-slate-900">Bs. {{ parseFloat(p.monto).toFixed(2) }}</td>
             <td class="py-2.5 px-4">
@@ -43,14 +46,25 @@
         </tbody>
       </table>
     </div>
+
+    <div v-if="ultimaPagina > 1" class="flex items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-600 shadow-xs">
+      <span>Página {{ paginaActual }} de {{ ultimaPagina }} ({{ totalRegistros }} pasos)</span>
+      <div class="flex items-center gap-2">
+        <button @click="cargarPasos(paginaActual - 1)" :disabled="paginaActual <= 1" class="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer font-semibold">Anterior</button>
+        <button @click="cargarPasos(paginaActual + 1)" :disabled="paginaActual >= ultimaPagina" class="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer font-semibold">Siguiente</button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import api from '../services/api'
+import api, { resolveMediaUrl } from '../services/api'
 
 const pasos = ref([])
+const paginaActual = ref(1)
+const ultimaPagina = ref(1)
+const totalRegistros = ref(0)
 
 function getEstadoBadge(estado) {
   switch (estado) {
@@ -67,14 +81,18 @@ function formatFecha(dateStr) {
   return d.toLocaleString()
 }
 
-async function cargarPasos() {
+async function cargarPasos(page = 1) {
+  if (page < 1) return
   try {
-    const res = await api.get('/pasos')
-    pasos.value = res.data.data
+    const res = await api.get('/pasos', { params: { page } })
+    pasos.value = res.data.data || []
+    paginaActual.value = res.data.current_page ?? 1
+    ultimaPagina.value = res.data.last_page ?? 1
+    totalRegistros.value = res.data.total ?? pasos.value.length
   } catch (err) {
     console.error(err)
   }
 }
 
-onMounted(cargarPasos)
+onMounted(() => cargarPasos(1))
 </script>

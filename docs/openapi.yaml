@@ -9,8 +9,6 @@ info:
 servers:
   - url: https://peaje.tudominio.com/api/v1
     description: Producción (HTTPS en subdominio)
-  - url: http://localhost:8000/api/v1
-    description: Entorno de pruebas local
 
 components:
   securitySchemes:
@@ -214,6 +212,70 @@ paths:
       responses:
         '200':
           description: Lista de tarifas
+    post:
+      summary: Crear tarifa (solo administrador)
+      responses:
+        '201':
+          description: Tarifa creada
+        '403':
+          description: Requiere rol administrador
+  /tarifas/{id}:
+    put:
+      summary: Actualizar tarifa (solo administrador)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tarifa actualizada
+    delete:
+      summary: Eliminar tarifa (solo administrador)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tarifa eliminada
+  /casetas:
+    get:
+      summary: Listar casetas de peaje
+      responses:
+        '200':
+          description: Lista de casetas
+    post:
+      summary: Crear caseta (solo administrador)
+      responses:
+        '201':
+          description: Caseta creada
+  /casetas/{id}:
+    put:
+      summary: Actualizar caseta (solo administrador)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Caseta actualizada
+    delete:
+      summary: Eliminar caseta (solo administrador)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Caseta eliminada
   /estado/inferencia:
     get:
       summary: Estado de RunPod (M1-M4), Ollama y BD
@@ -227,14 +289,23 @@ paths:
         '200':
           description: Lista de usuarios
     post:
-      summary: Agregar usuario a lista blanca Google OAuth
+      summary: Agregar usuario a lista blanca Google OAuth (solo administrador)
       responses:
         '201':
           description: Usuario autorizado creado
   /stream/eventos:
     get:
-      summary: Stream Server-Sent Events (SSE) en tiempo real para el panel web
+      summary: Stream Server-Sent Events (SSE) autenticado para el panel web
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: Token Sanctum (alternativo a Authorization Bearer para EventSource)
+          schema:
+            type: string
       responses:
         '200':
           description: Flujo text/event-stream con nuevos pasos y alertas
+        '401':
+          description: Token faltante o inválido
 

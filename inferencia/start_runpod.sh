@@ -161,7 +161,7 @@ echo "✔ Proxy Ollama:   POST http://0.0.0.0:${PORT}/ollama/generate"
 echo "=========================================================="
 echo "CONEXIÓN DESDE LARAVEL (backend/.env):"
 echo "  INFERENCE_URL=https://<POD_ID>-${PORT}.proxy.runpod.net"
-echo "  OLLAMA_URL=https://<POD_ID>-11434.proxy.runpod.net"
+echo "  OLLAMA_URL=https://<POD_ID>-${PORT}.proxy.runpod.net/ollama"
 echo "  OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}"
 echo "=========================================================="
 

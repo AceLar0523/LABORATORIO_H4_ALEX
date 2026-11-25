@@ -6,78 +6,18 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
-    /**
-     * POST /api/v1/auth/login
-     * Login directo con correo y contraseña verificados con hash seguro.
-     */
-    public function credentialsLogin(Request $request)
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string',
-        ]);
-
-        $email = strtolower(trim($request->input('email')));
-        $password = (string) $request->input('password');
-
-        $user = User::whereRaw('LOWER(email_google) = ?', [$email])->first();
-
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Usuario no encontrado en la lista blanca del sistema.',
-            ], 404);
-        }
-
-        if (!$user->activo) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Tu cuenta se encuentra desactivada. Contacta al administrador.',
-            ], 403);
-        }
-
-        if (empty($user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Esta cuenta utiliza únicamente inicio de sesión con Google OAuth 2.0.',
-            ], 403);
-        }
-
-        if (!Hash::check($password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Credenciales inválidas.',
-            ], 401);
-        }
-
-        $apiToken = $user->createToken('peaje-session')->plainTextToken;
-
-        return response()->json([
-            'success' => true,
-            'token' => $apiToken,
-            'usuario' => [
-                'id' => $user->id,
-                'nombre' => $user->nombre,
-                'email_google' => $user->email_google,
-                'rol' => $user->rol,
-                'activo' => (bool) $user->activo,
-            ],
-        ]);
-    }
-
     /**
      * GET /api/v1/auth/config
      * Expone configuración pública de Google OAuth 2.0 (Web y Móvil Android) para los clientes.
      */
     public function authConfig()
     {
-        $webClientId = trim((string) env('GOOGLE_CLIENT_ID', ''));
-        $androidClientId = trim((string) env('GOOGLE_ANDROID_CLIENT_ID', ''));
+        $webClientId = trim((string) config('services.google.client_id', ''));
+        $androidClientId = trim((string) config('services.google.android_client_id', ''));
 
         return response()->json([
             'google_client_id' => $webClientId,
@@ -98,8 +38,8 @@ class AuthController extends Controller
         ]);
 
         $allowedClientIds = array_values(array_filter([
-            trim((string) env('GOOGLE_CLIENT_ID', '')),
-            trim((string) env('GOOGLE_ANDROID_CLIENT_ID', '')),
+            trim((string) config('services.google.client_id', '')),
+            trim((string) config('services.google.android_client_id', '')),
         ]));
 
         if (empty($allowedClientIds)) {
